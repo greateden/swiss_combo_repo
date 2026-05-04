@@ -108,6 +108,25 @@ def normalize_chunks(chunks: object) -> list[dict[str, object]]:
     return normalized
 
 
+def configure_whisper_generation(transcriber, task: str, language: str) -> dict[str, str]:
+    model = getattr(transcriber, "model", None)
+    generation_config = getattr(model, "generation_config", None)
+    if generation_config is not None:
+        generation_config.forced_decoder_ids = None
+        generation_config.suppress_tokens = []
+        generation_config.begin_suppress_tokens = []
+    model_config = getattr(model, "config", None)
+    if model_config is not None:
+        model_config.forced_decoder_ids = None
+        model_config.suppress_tokens = []
+        model_config.begin_suppress_tokens = []
+
+    generate_kwargs: dict[str, str] = {"task": task}
+    if language:
+        generate_kwargs["language"] = language
+    return generate_kwargs
+
+
 def main() -> None:
     args = parse_args()
 
@@ -127,9 +146,7 @@ def main() -> None:
         torch_dtype=torch_dtype,
     )
 
-    generate_kwargs: dict[str, str] = {"task": task}
-    if language:
-        generate_kwargs["language"] = language
+    generate_kwargs = configure_whisper_generation(transcriber, task, language)
 
     result = transcriber(
         args.audio,
