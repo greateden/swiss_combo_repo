@@ -14,6 +14,14 @@ Standard German sentence
 English translation
 ```
 
+The pipeline has three content steps:
+
+- transcribe the audio into Swiss German-style text with `DIALECT_DIR`
+- transcribe the same Swiss German audio into Standard German text with `STANDARD_DIR`
+- translate each aligned Standard German sentence to English with `Helsinki-NLP/opus-mt-de-en`
+
+The final `.parallel.txt` output is sentence-by-sentence, with exactly three lines per block in this order: Swiss German, Standard German, English.
+
 ## Build
 
 On Aoraki:
@@ -27,8 +35,8 @@ This installs Python packages into `python_packages/` and downloads the translat
 
 The build also creates the default sibling Whisper deployments if they are missing:
 
-- `../swiss-german-swiss`: Swiss German ASR, default model `Flurin17/whisper-large-v3-turbo-swiss-german`
-- `../swiss_german`: Standard German ASR, default model `primeline/whisper-large-v3-turbo-german`
+- `../swiss-german-swiss`: Swiss German speech to Swiss German-style text, default model `notebotIE/whisper-large-v2-swiss-german`
+- `../swiss_german`: Swiss German speech to Standard German text, default model `Flurin17/whisper-large-v3-turbo-swiss-german`
 
 Those deployment folders and their Hugging Face caches stay outside this repo. Override them if needed:
 
@@ -71,6 +79,7 @@ Intermediate transcripts, translation cache, logs, and outputs stay inside this 
 - The translation model downloader avoids the threaded Hugging Face snapshot path that can stall on Aoraki. It downloads only the required Transformers files, skips unused TensorFlow/Rust/Flax weights, disables Xet by default for this setup, and exits clearly if another downloader is already holding Hugging Face locks.
 - Job submission now checks `DIALECT_DIR` and `STANDARD_DIR` before calling `sbatch`, so missing Whisper deployment paths fail immediately with debugging commands instead of producing a failed SLURM job.
 - `build.sh` now creates and warms the default Whisper deployments, including the Swiss German Hugging Face ASR model and the Standard German ASR model.
+- Default Whisper model roles were corrected: the dialect transcript uses a Swiss German transcription model, while the standard transcript uses the Swiss German to Standard German model.
 
 ## Important Files
 

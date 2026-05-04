@@ -15,6 +15,7 @@ Scope: this folder only.
 
 - Use `module load apptainer/pytorch/24.04` and run Python through `pytorch_exec` when available.
 - Use `bash build.sh` to install dependencies, create the default Whisper deployments, download the Whisper models, and download the translation model.
+- Default Whisper roles: `DIALECT_DIR` is Swiss German speech to Swiss German-style text, and `STANDARD_DIR` is Swiss German speech to Standard German text. Do not replace `STANDARD_DIR` with a generic German ASR model unless the user explicitly asks for that tradeoff.
 - Use `bash submit_combo.sh <audio.mp3> [output.txt]` for normal jobs.
 - Do not run full Whisper transcription or full translation jobs directly on the login node.
 - Let `submit_combo.sh` choose a GPU node, or set `PARTITION`/`NODELIST` explicitly when needed.
