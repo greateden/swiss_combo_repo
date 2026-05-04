@@ -21,6 +21,7 @@ The pipeline has three content steps:
 - translate each aligned Standard German sentence to English with `Helsinki-NLP/opus-mt-de-en`
 
 The final `.parallel.txt` output is sentence-by-sentence, with exactly three lines per block in this order: Swiss German, Standard German, English.
+The pipeline also writes an `.srt` file next to the text output. Each SRT cue uses the aligned Standard German timestamp span when available, falling back to the Swiss German timestamp span, and displays all three lines at the same time.
 
 ## Build
 
@@ -73,6 +74,7 @@ TIME=08:00:00 MEM=120G CPUS=4 PARTITION=aoraki_gpu_L40 bash submit_combo.sh path
 ```
 
 Intermediate transcripts, translation cache, logs, and outputs stay inside this folder. Existing `work/<audio>/dialect.json` and `standard.json` are reused unless `FORCE=1` is set.
+For `outputs/audio.parallel.txt`, the matching subtitle file is `outputs/audio.parallel.srt`.
 
 ## Bug Fixes
 
@@ -83,6 +85,7 @@ Intermediate transcripts, translation cache, logs, and outputs stay inside this 
 - `build.sh` installs a repo-local `ffmpeg` binary through `imageio-ffmpeg` and adds it to the runtime `PATH`, so Transformers can decode audio files on Aoraki nodes without system `ffmpeg`.
 - The generated Whisper transcriber clears stale `forced_decoder_ids` and suppression-token settings from model configs before generation, avoiding a Transformers timestamp-generation crash in the Standard German pass.
 - The generated Whisper transcriber also normalizes list-valued Whisper token IDs, such as `eos_token_id`, to scalar integers for Transformers timestamp generation.
+- The final subtitle builder now writes an SRT file with timestamps and displays Swiss German, Standard German, and English together in each cue.
 
 ## Important Files
 

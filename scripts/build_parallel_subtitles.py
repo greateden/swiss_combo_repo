@@ -217,6 +217,15 @@ class AlignedSpan:
     score: float
 
 
+@dataclass
+class OutputRow:
+    dialect_text: str
+    standard_text: str
+    start: float
+    end: float
+    score: float
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build aligned Swiss German / Standard German / English text blocks.")
     parser.add_argument("--dialect-json", required=True)
@@ -231,6 +240,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--skip-translation", action="store_true", help="Write blank English lines; useful for alignment debugging.")
     parser.add_argument("--debug-alignment", help="Optional TSV file with alignment scores and source sentence indexes.")
     parser.add_argument("--translation-cache", help="Optional JSONL cache for Standard German to English translations.")
+    parser.add_argument("--srt-output", help="Optional SRT output path; defaults to the text output path with .srt suffix.")
     return parser.parse_args()
 
 
@@ -305,6 +315,17 @@ def make_sentence_blocks(segments: list[Segment]) -> list[Block]:
 
 def join_block_text(blocks: list[Block]) -> str:
     return clean_text(" ".join(block.text for block in blocks))
+
+
+def group_start_end(preferred_blocks: list[Block], fallback_blocks: list[Block]) -> tuple[float, float]:
+    blocks = preferred_blocks or fallback_blocks
+    if not blocks:
+        return 0.0, 0.0
+    start = min(block.start for block in blocks)
+    end = max(block.end for block in blocks)
+    if end <= start:
+        end = start + 0.001
+    return start, end
 
 
 def normalize_for_alignment(text: str) -> str:
@@ -519,8 +540,19 @@ def best_unequal_groups(
     return grouped
 
 
-def expand_aligned_spans(aligned_spans: list[AlignedSpan]) -> list[tuple[str, str, float]]:
-    rows: list[tuple[str, str, float]] = []
+def make_output_row(dialect_group: list[Block], standard_group: list[Block], score: float) -> OutputRow:
+    start, end = group_start_end(standard_group, dialect_group)
+    return OutputRow(
+        dialect_text=join_block_text(dialect_group),
+        standard_text=join_block_text(standard_group),
+        start=start,
+        end=end,
+        score=score,
+    )
+
+
+def expand_aligned_spans(aligned_spans: list[AlignedSpan]) -> list[OutputRow]:
+    rows: list[OutputRow] = []
     for aligned_span in aligned_spans:
         dialect_count = len(aligned_span.dialect_blocks)
         standard_count = len(aligned_span.standard_blocks)
@@ -528,7 +560,7 @@ def expand_aligned_spans(aligned_spans: list[AlignedSpan]) -> list[tuple[str, st
         if dialect_count == standard_count and dialect_count > 1:
             for dialect_block, standard_block in zip(aligned_span.dialect_blocks, aligned_span.standard_blocks):
                 score = feature_score(make_text_features(dialect_block.text), make_text_features(standard_block.text))
-                rows.append((dialect_block.text, standard_block.text, score))
+                rows.append(make_output_row([dialect_block], [standard_block], score))
             continue
 
         if dialect_count < standard_count:
@@ -538,9 +570,7 @@ def expand_aligned_spans(aligned_spans: list[AlignedSpan]) -> list[tuple[str, st
                 longer_blocks_are_standard=True,
             )
             for dialect_group, standard_group, score in grouped_blocks:
-                dialect_text = join_block_text(dialect_group)
-                standard_text = join_block_text(standard_group)
-                rows.append((dialect_text, standard_text, score))
+                rows.append(make_output_row(dialect_group, standard_group, score))
             continue
 
         if standard_count < dialect_count:
@@ -550,12 +580,10 @@ def expand_aligned_spans(aligned_spans: list[AlignedSpan]) -> list[tuple[str, st
                 longer_blocks_are_standard=False,
             )
             for dialect_group, standard_group, score in grouped_blocks:
-                dialect_text = join_block_text(dialect_group)
-                standard_text = join_block_text(standard_group)
-                rows.append((dialect_text, standard_text, score))
+                rows.append(make_output_row(dialect_group, standard_group, score))
             continue
 
-        rows.append((join_block_text(aligned_span.dialect_blocks), join_block_text(aligned_span.standard_blocks), aligned_span.score))
+        rows.append(make_output_row(aligned_span.dialect_blocks, aligned_span.standard_blocks, aligned_span.score))
 
     return rows
 
@@ -622,6 +650,39 @@ def write_translation_cache(path: Path, cache: dict[str, str], source_by_key: di
             )
         )
     atomic_write_text(path, "\n".join(lines).rstrip() + "\n")
+
+
+def format_srt_timestamp(seconds: float) -> str:
+    milliseconds_total = max(round(seconds * 1000), 0)
+    hours, remainder = divmod(milliseconds_total, 3_600_000)
+    minutes, remainder = divmod(remainder, 60_000)
+    whole_seconds, milliseconds = divmod(remainder, 1000)
+    return f"{hours:02}:{minutes:02}:{whole_seconds:02},{milliseconds:03}"
+
+
+def srt_safe_text(text: str) -> str:
+    return clean_text(text).replace("\n", " ")
+
+
+def write_srt(path: Path, rows: list[OutputRow], english_lines: list[str]) -> None:
+    blocks: list[str] = []
+    previous_end = 0.0
+    for index, (row, english_text) in enumerate(zip(rows, english_lines), start=1):
+        start = max(row.start, previous_end)
+        end = max(row.end, start + 0.001)
+        previous_end = end
+        blocks.append(
+            "\n".join(
+                [
+                    str(index),
+                    f"{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}",
+                    srt_safe_text(row.dialect_text),
+                    srt_safe_text(row.standard_text),
+                    srt_safe_text(english_text),
+                ]
+            )
+        )
+    atomic_write_text(path, "\n\n".join(blocks).rstrip() + "\n")
 
 
 def translate_one_text(text: str, tokenizer, model, device: str, max_chars: int) -> str:
@@ -708,7 +769,7 @@ def main() -> None:
         translation_model_dir = Path(args.translation_model_dir).resolve()
         translation_cache = Path(args.translation_cache).resolve() if args.translation_cache else None
         english_lines = translate_texts(
-            [standard for _, standard, _ in rows],
+            [row.standard_text for row in rows],
             translation_model_dir,
             args.max_translate_chars,
             translation_cache,
@@ -717,18 +778,22 @@ def main() -> None:
     if args.debug_alignment:
         debug_output = Path(args.debug_alignment).resolve()
         debug_output.parent.mkdir(parents=True, exist_ok=True)
-        debug_lines = ["score\tdialect\tstandard"]
-        for dialect_text, standard_text, score in rows:
-            debug_lines.append(f"{score:.3f}\t{dialect_text}\t{standard_text}")
+        debug_lines = ["start\tend\tscore\tdialect\tstandard"]
+        for row in rows:
+            debug_lines.append(f"{row.start:.3f}\t{row.end:.3f}\t{row.score:.3f}\t{row.dialect_text}\t{row.standard_text}")
         atomic_write_text(debug_output, "\n".join(debug_lines) + "\n")
 
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     lines: list[str] = []
-    for (dialect_text, standard_text, _), english_text in zip(rows, english_lines):
-        lines.extend([dialect_text, standard_text, english_text, ""])
+    for row, english_text in zip(rows, english_lines):
+        lines.extend([row.dialect_text, row.standard_text, english_text, ""])
     atomic_write_text(output, "\n".join(lines).rstrip() + "\n")
     print(f"Wrote {output}")
+
+    srt_output = Path(args.srt_output).resolve() if args.srt_output else output.with_suffix(".srt")
+    write_srt(srt_output, rows, english_lines)
+    print(f"Wrote {srt_output}")
     print(
         "Aligned "
         f"{len(rows)} rows from {len(dialect_blocks)} Swiss German and {len(standard_blocks)} Standard German sentences "

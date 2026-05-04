@@ -34,6 +34,7 @@ output="${2:-outputs/$(basename "${audio%.*}").parallel.txt}"
 stem="$(basename "${audio%.*}")"
 output_base="$(basename "${output%.*}")"
 debug_stem="${output_base%.parallel}"
+srt_output="${output%.*}.srt"
 work_dir="$SWISS_COMBO_DIR/work/$stem"
 mkdir -p "$work_dir"
 
@@ -115,5 +116,6 @@ pytorch_python scripts/build_parallel_subtitles.py \
   --dialect-json "$work_dir/dialect.json" \
   --standard-json "$work_dir/standard.json" \
   --output "$output" \
+  --srt-output "$srt_output" \
   --debug-alignment "$SWISS_COMBO_DIR/outputs/${debug_stem}.alignment.tsv" \
   --translation-cache "$work_dir/translations.jsonl"
