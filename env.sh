@@ -33,6 +33,34 @@ export HF_HUB_DISABLE_XET=1
 export TOKENIZERS_PARALLELISM=false
 export PYTHONPATH="$PYTHON_PACKAGES_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
+deployment_help() {
+  local name="$1"
+  local value="$2"
+  local purpose="$3"
+  cat >&2 <<EOF
+[ERROR] $name does not exist: $value
+[ERROR] Set $name to the $purpose Whisper deployment.
+[ERROR] Expected deployment folders contain scripts/transcribe.py and env.sh.
+[ERROR] To locate candidates:
+[ERROR]   find /projects/sciences/computing/$USER -type f -path '*/scripts/transcribe.py' -printf '%h\n'
+[ERROR] Then rerun with absolute paths, for example:
+[ERROR]   DIALECT_DIR=/path/to/swiss-dialect-whisper STANDARD_DIR=/path/to/standard-german-whisper bash submit_combo.sh audio/file.mp3 outputs/file.parallel.txt
+EOF
+}
+
+check_deployments() {
+  local failed=0
+  if [[ ! -d "$DIALECT_DIR" || ! -f "$DIALECT_DIR/scripts/transcribe.py" || ! -f "$DIALECT_DIR/env.sh" ]]; then
+    deployment_help "DIALECT_DIR" "$DIALECT_DIR" "Swiss German"
+    failed=1
+  fi
+  if [[ ! -d "$STANDARD_DIR" || ! -f "$STANDARD_DIR/scripts/transcribe.py" || ! -f "$STANDARD_DIR/env.sh" ]]; then
+    deployment_help "STANDARD_DIR" "$STANDARD_DIR" "Standard German"
+    failed=1
+  fi
+  return "$failed"
+}
+
 mkdir -p \
   "$SWISS_COMBO_DIR"/{audio,logs,models,outputs,python_packages,scripts,tmp,work} \
   "$HF_HOME" "$HF_HUB_CACHE" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" \

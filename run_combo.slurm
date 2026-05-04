@@ -22,17 +22,7 @@ if ! command -v pytorch_exec >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -d "$DIALECT_DIR" ]]; then
-  echo "[ERROR] DIALECT_DIR does not exist: $DIALECT_DIR" >&2
-  echo "[ERROR] Set DIALECT_DIR to the Swiss German Whisper deployment." >&2
-  exit 1
-fi
-
-if [[ ! -d "$STANDARD_DIR" ]]; then
-  echo "[ERROR] STANDARD_DIR does not exist: $STANDARD_DIR" >&2
-  echo "[ERROR] Set STANDARD_DIR to the Standard German Whisper deployment." >&2
-  exit 1
-fi
+check_deployments
 
 if [[ $# -lt 1 ]]; then
   echo "Usage: sbatch run_combo.slurm audio/file.mp3 [output.txt]" >&2

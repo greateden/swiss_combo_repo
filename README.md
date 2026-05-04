@@ -33,6 +33,20 @@ STANDARD_DIR=/path/to/swiss_german \
 bash build.sh
 ```
 
+`DIALECT_DIR` and `STANDARD_DIR` must each point to a Whisper deployment containing `env.sh` and `scripts/transcribe.py`. If the defaults do not exist on Aoraki, locate the deployments with:
+
+```bash
+find /projects/sciences/computing/$USER -type f -path '*/scripts/transcribe.py' -printf '%h\n'
+```
+
+Then submit with absolute paths:
+
+```bash
+DIALECT_DIR=/path/to/swiss-dialect-whisper \
+STANDARD_DIR=/path/to/standard-german-whisper \
+bash submit_combo.sh audio/file.mp3 outputs/file.parallel.txt
+```
+
 ## Run
 
 ```bash
@@ -50,6 +64,7 @@ Intermediate transcripts, translation cache, logs, and outputs stay inside this 
 ## Bug Fixes
 
 - The translation model downloader avoids the threaded Hugging Face snapshot path that can stall on Aoraki. It downloads only the required Transformers files, skips unused TensorFlow/Rust/Flax weights, disables Xet by default for this setup, and exits clearly if another downloader is already holding Hugging Face locks.
+- Job submission now checks `DIALECT_DIR` and `STANDARD_DIR` before calling `sbatch`, so missing Whisper deployment paths fail immediately with debugging commands instead of producing a failed SLURM job.
 
 ## Important Files
 

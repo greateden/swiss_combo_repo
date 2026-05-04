@@ -19,6 +19,7 @@ Scope: this folder only.
 - Do not run full Whisper transcription or full translation jobs directly on the login node.
 - Let `submit_combo.sh` choose a GPU node, or set `PARTITION`/`NODELIST` explicitly when needed.
 - Check `squeue -u "$USER"` and `logs/` while jobs are running.
+- If a run fails with missing `DIALECT_DIR` or `STANDARD_DIR`, first locate Whisper deployments with `find /projects/sciences/computing/$USER -type f -path '*/scripts/transcribe.py' -printf '%h\n'`, then rerun with absolute `DIALECT_DIR=/path/to/dialect` and `STANDARD_DIR=/path/to/standard` values. The deployment directories must contain both `env.sh` and `scripts/transcribe.py`.
 
 ## Pipeline Notes
 

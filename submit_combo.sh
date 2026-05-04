@@ -15,6 +15,8 @@ time_limit="${TIME:-04:00:00}"
 memory="${MEM:-120G}"
 cpus="${CPUS:-4}"
 
+check_deployments
+
 sbatch_args=()
 if [[ -n "${PARTITION:-}" ]]; then
   sbatch_args+=(--partition="$PARTITION")
