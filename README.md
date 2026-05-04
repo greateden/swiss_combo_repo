@@ -82,6 +82,7 @@ Intermediate transcripts, translation cache, logs, and outputs stay inside this 
 - Default Whisper model roles were corrected: the dialect transcript uses a Swiss German transcription model, while the standard transcript uses the Swiss German to Standard German model.
 - `build.sh` installs a repo-local `ffmpeg` binary through `imageio-ffmpeg` and adds it to the runtime `PATH`, so Transformers can decode audio files on Aoraki nodes without system `ffmpeg`.
 - The generated Whisper transcriber clears stale `forced_decoder_ids` and suppression-token settings from model configs before generation, avoiding a Transformers timestamp-generation crash in the Standard German pass.
+- The generated Whisper transcriber also normalizes list-valued Whisper token IDs, such as `eos_token_id`, to scalar integers for Transformers timestamp generation.
 
 ## Important Files
 
