@@ -31,6 +31,7 @@ export PYTHONUSERBASE="$SWISS_COMBO_DIR/.python_userbase"
 export PYTHONNOUSERSITE=1
 export HF_HUB_DISABLE_XET=1
 export TOKENIZERS_PARALLELISM=false
+export PATH="$PYTHON_PACKAGES_DIR/bin:$PYTHON_PACKAGES_DIR/imageio_ffmpeg/binaries${PATH:+:$PATH}"
 export PYTHONPATH="$PYTHON_PACKAGES_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 deployment_help() {

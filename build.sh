@@ -24,6 +24,16 @@ fi
   --cache-dir "$PIP_CACHE_DIR" \
   -r requirements.txt
 
+ffmpeg_exe="$("${python_runner[@]}" - <<'PY'
+import imageio_ffmpeg
+
+print(imageio_ffmpeg.get_ffmpeg_exe())
+PY
+)"
+mkdir -p "$PYTHON_PACKAGES_DIR/bin"
+ln -sf "$ffmpeg_exe" "$PYTHON_PACKAGES_DIR/bin/ffmpeg"
+"$PYTHON_PACKAGES_DIR/bin/ffmpeg" -version | sed -n '1p'
+
 (
   cd "$DIALECT_DIR"
   source ./env.sh

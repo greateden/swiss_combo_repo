@@ -42,6 +42,7 @@ export HF_HUB_DISABLE_XET=1
 export TOKENIZERS_PARALLELISM=false
 export TRANSFORMERS_NO_TF=1
 export TRANSFORMERS_NO_FLAX=1
+export PATH="\$SWISS_COMBO_DIR/python_packages/bin:\$SWISS_COMBO_DIR/python_packages/imageio_ffmpeg/binaries\${PATH:+:\$PATH}"
 export PYTHONPATH="\$SWISS_COMBO_DIR/python_packages\${PYTHONPATH:+:\$PYTHONPATH}"
 
 mkdir -p "\$HF_HOME" "\$HF_HUB_CACHE" "\$TRANSFORMERS_CACHE" "\$XDG_CACHE_HOME" "\$MPLCONFIGDIR" "\$TMPDIR"
@@ -67,6 +68,12 @@ import argparse
 import json
 import os
 from pathlib import Path
+
+combo_dir = os.environ.get("SWISS_COMBO_DIR")
+if combo_dir:
+    package_dir = Path(combo_dir) / "python_packages"
+    ffmpeg_paths = [package_dir / "bin", package_dir / "imageio_ffmpeg" / "binaries"]
+    os.environ["PATH"] = ":".join(str(path) for path in ffmpeg_paths) + os.pathsep + os.environ.get("PATH", "")
 
 
 def parse_args() -> argparse.Namespace:

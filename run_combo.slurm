@@ -41,6 +41,12 @@ export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-4}"
 
 nvidia-smi || true
 
+pytorch_python() {
+  pytorch_exec env \
+    PATH="$SWISS_COMBO_DIR/python_packages/bin:$SWISS_COMBO_DIR/python_packages/imageio_ffmpeg/binaries:${PATH:-}" \
+    python3 "$@"
+}
+
 clear_model_env() {
   unset MODEL_ID
   unset MODEL_DIR
@@ -68,7 +74,7 @@ clear_model_env() {
   if [[ "${FORCE:-0}" != "1" && -s "$work_dir/dialect.json" && -s "$work_dir/dialect.txt" ]]; then
     echo "[INFO] Reusing existing dialect transcript: $work_dir/dialect.json"
   else
-    pytorch_exec python3 scripts/transcribe.py "$audio" \
+    pytorch_python scripts/transcribe.py "$audio" \
       --output "$work_dir/dialect.txt" \
       --json "$work_dir/dialect.json" \
       --timestamps chunk \
@@ -83,7 +89,7 @@ clear_model_env() {
   if [[ "${FORCE:-0}" != "1" && -s "$work_dir/standard.json" && -s "$work_dir/standard.txt" ]]; then
     echo "[INFO] Reusing existing standard transcript: $work_dir/standard.json"
   else
-    pytorch_exec python3 scripts/transcribe.py "$audio" \
+    pytorch_python scripts/transcribe.py "$audio" \
       --output "$work_dir/standard.txt" \
       --json "$work_dir/standard.json" \
       --timestamps chunk \
@@ -105,7 +111,7 @@ unset MPLCONFIGDIR
 unset TRANSLATION_MODEL_ID
 unset TRANSLATION_MODEL_DIR
 source ./env.sh
-pytorch_exec python3 scripts/build_parallel_subtitles.py \
+pytorch_python scripts/build_parallel_subtitles.py \
   --dialect-json "$work_dir/dialect.json" \
   --standard-json "$work_dir/standard.json" \
   --output "$output" \

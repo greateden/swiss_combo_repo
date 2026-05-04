@@ -80,6 +80,7 @@ Intermediate transcripts, translation cache, logs, and outputs stay inside this 
 - Job submission now checks `DIALECT_DIR` and `STANDARD_DIR` before calling `sbatch`, so missing Whisper deployment paths fail immediately with debugging commands instead of producing a failed SLURM job.
 - `build.sh` now creates and warms the default Whisper deployments, including the Swiss German Hugging Face ASR model and the Standard German ASR model.
 - Default Whisper model roles were corrected: the dialect transcript uses a Swiss German transcription model, while the standard transcript uses the Swiss German to Standard German model.
+- `build.sh` installs a repo-local `ffmpeg` binary through `imageio-ffmpeg` and adds it to the runtime `PATH`, so Transformers can decode audio files on Aoraki nodes without system `ffmpeg`.
 
 ## Important Files
 
