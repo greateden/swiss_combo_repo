@@ -12,8 +12,8 @@ resolve_dir() {
   fi
 }
 
-export DIALECT_DIR="${DIALECT_DIR:-$(resolve_dir "$SWISS_COMBO_DIR/../swiss-german-swiss")}"
-export STANDARD_DIR="${STANDARD_DIR:-$(resolve_dir "$SWISS_COMBO_DIR/../swiss_german")}"
+export DIALECT_DIR="${DIALECT_DIR:-$(resolve_dir "$SWISS_COMBO_DIR/swiss-german-swiss")}"
+export STANDARD_DIR="${STANDARD_DIR:-$(resolve_dir "$SWISS_COMBO_DIR/swiss_german")}"
 
 export TRANSLATION_MODEL_ID="${TRANSLATION_MODEL_ID:-Helsinki-NLP/opus-mt-de-en}"
 export TRANSLATION_MODEL_DIR="${TRANSLATION_MODEL_DIR:-$SWISS_COMBO_DIR/models/Helsinki-NLP__opus-mt-de-en}"

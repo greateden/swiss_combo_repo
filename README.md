@@ -33,12 +33,12 @@ bash build.sh
 
 This installs Python packages into `python_packages/` and downloads the translation model into `models/`. Both paths are ignored by git.
 
-The build also creates the default sibling Whisper deployments if they are missing:
+The build also creates the default Whisper deployments inside this repo if they are missing:
 
-- `../swiss-german-swiss`: Swiss German speech to Swiss German-style text, default model `notebotIE/whisper-large-v2-swiss-german`
-- `../swiss_german`: Swiss German speech to Standard German text, default model `Flurin17/whisper-large-v3-turbo-swiss-german`
+- `swiss-german-swiss/`: Swiss German speech to Swiss German-style text, default model `notebotIE/whisper-large-v2-swiss-german`
+- `swiss_german/`: Swiss German speech to Standard German text, default model `Flurin17/whisper-large-v3-turbo-swiss-german`
 
-Those deployment folders and their Hugging Face caches stay outside this repo. Override them if needed:
+Those deployment folders and their Hugging Face caches are ignored by git. Override them if needed:
 
 ```bash
 DIALECT_DIR=/path/to/swiss-german-swiss \

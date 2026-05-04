@@ -6,6 +6,8 @@ logs/
 models/
 outputs/
 python_packages/
+swiss-german-swiss/
+swiss_german/
 tmp/
 work/
 

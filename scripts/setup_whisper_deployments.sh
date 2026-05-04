@@ -3,8 +3,8 @@ set -euo pipefail
 
 combo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$combo_dir/env.sh"
-default_dialect_dir="$(cd "$combo_dir/.." && pwd)/swiss-german-swiss"
-default_standard_dir="$(cd "$combo_dir/.." && pwd)/swiss_german"
+default_dialect_dir="$combo_dir/swiss-german-swiss"
+default_standard_dir="$combo_dir/swiss_german"
 
 write_env() {
   local path="$1"

@@ -8,7 +8,7 @@ Scope: this folder only.
 - Do not install into global Python or system paths.
 - Source `./env.sh` before build, setup, or pipeline work.
 - Keep caches, downloaded models, Python packages, logs, work files, audio, and outputs inside this folder.
-- Do not commit generated/heavy folders: `models/`, `python_packages/`, `.hf_home/`, `.cache/`, `work/`, `logs/`, `outputs/`, `tmp/`, or `audio/`.
+- Do not commit generated/heavy folders: `models/`, `python_packages/`, `swiss-german-swiss/`, `swiss_german/`, `.hf_home/`, `.cache/`, `work/`, `logs/`, `outputs/`, `tmp/`, or `audio/`.
 - Use the local Whisper deployments through `DIALECT_DIR` and `STANDARD_DIR`; do not duplicate Whisper model weights in this repo.
 
 ## Aoraki Usage
