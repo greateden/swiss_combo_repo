@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+combo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$combo_dir/env.sh"
+
+write_env() {
+  local path="$1"
+  local role="$2"
+  local default_model="$3"
+  local default_language="$4"
+  local model_var="$5"
+  local language_var="$6"
+
+  if [[ -f "$path/env.sh" ]]; then
+    echo "[INFO] Keeping existing $role deployment env: $path/env.sh"
+    return
+  fi
+
+  cat >"$path/env.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+
+export WHISPER_DEPLOYMENT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+export SWISS_COMBO_DIR="\${SWISS_COMBO_DIR:-$combo_dir}"
+export MODEL_ID="\${MODEL_ID:-\${$model_var:-$default_model}}"
+export WHISPER_LANGUAGE="\${WHISPER_LANGUAGE:-\${$language_var:-$default_language}}"
+export WHISPER_TASK="\${WHISPER_TASK:-transcribe}"
+
+export HF_HOME="\$WHISPER_DEPLOYMENT_DIR/.hf_home"
+export HF_HUB_CACHE="\$WHISPER_DEPLOYMENT_DIR/.hf_home/hub"
+export TRANSFORMERS_CACHE="\$WHISPER_DEPLOYMENT_DIR/.hf_home/transformers"
+export XDG_CACHE_HOME="\$WHISPER_DEPLOYMENT_DIR/.cache"
+export MPLCONFIGDIR="\$WHISPER_DEPLOYMENT_DIR/.cache/matplotlib"
+export TMPDIR="\$WHISPER_DEPLOYMENT_DIR/tmp"
+export PYTHONNOUSERSITE=1
+export HF_HUB_DISABLE_XET=1
+export TOKENIZERS_PARALLELISM=false
+export TRANSFORMERS_NO_TF=1
+export TRANSFORMERS_NO_FLAX=1
+export PYTHONPATH="\$SWISS_COMBO_DIR/python_packages\${PYTHONPATH:+:\$PYTHONPATH}"
+
+mkdir -p "\$HF_HOME" "\$HF_HUB_CACHE" "\$TRANSFORMERS_CACHE" "\$XDG_CACHE_HOME" "\$MPLCONFIGDIR" "\$TMPDIR"
+EOF
+  chmod +x "$path/env.sh"
+  echo "[INFO] Created $role deployment env: $path/env.sh"
+}
+
+write_transcriber() {
+  local path="$1"
+  local role="$2"
+
+  if [[ -f "$path/scripts/transcribe.py" ]]; then
+    echo "[INFO] Keeping existing $role transcriber: $path/scripts/transcribe.py"
+    return
+  fi
+
+  cat >"$path/scripts/transcribe.py" <<'PY'
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Transcribe audio with a local Hugging Face Whisper deployment.")
+    parser.add_argument("audio")
+    parser.add_argument("--output", required=True)
+    parser.add_argument("--json", required=True)
+    parser.add_argument("--timestamps", default="chunk", choices=["chunk", "word", "none"])
+    parser.add_argument("--batch-size", type=int, default=8)
+    parser.add_argument("--chunk-length-s", type=float, default=float(os.environ.get("WHISPER_CHUNK_LENGTH_S", "30")))
+    return parser.parse_args()
+
+
+def normalize_chunks(chunks: object) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
+    if not isinstance(chunks, list):
+        return normalized
+    for chunk in chunks:
+        if not isinstance(chunk, dict):
+            continue
+        timestamp = chunk.get("timestamp") or (None, None)
+        if not isinstance(timestamp, (list, tuple)):
+            timestamp = (None, None)
+        start = timestamp[0] if len(timestamp) > 0 else None
+        end = timestamp[1] if len(timestamp) > 1 else None
+        normalized.append(
+            {
+                "text": str(chunk.get("text", "")).strip(),
+                "timestamp": [start, end],
+            }
+        )
+    return normalized
+
+
+def main() -> None:
+    args = parse_args()
+
+    import torch
+    from transformers import pipeline
+
+    model_id = os.environ.get("MODEL_ID", "openai/whisper-large-v3-turbo")
+    language = os.environ.get("WHISPER_LANGUAGE", "").strip()
+    task = os.environ.get("WHISPER_TASK", "transcribe").strip() or "transcribe"
+    device = 0 if torch.cuda.is_available() else -1
+    torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+
+    transcriber = pipeline(
+        "automatic-speech-recognition",
+        model=model_id,
+        device=device,
+        torch_dtype=torch_dtype,
+    )
+
+    generate_kwargs: dict[str, str] = {"task": task}
+    if language:
+        generate_kwargs["language"] = language
+
+    result = transcriber(
+        args.audio,
+        chunk_length_s=args.chunk_length_s,
+        batch_size=args.batch_size,
+        return_timestamps=args.timestamps != "none",
+        generate_kwargs=generate_kwargs,
+    )
+
+    text = str(result.get("text", "") if isinstance(result, dict) else "").strip()
+    chunks = normalize_chunks(result.get("chunks") if isinstance(result, dict) else None)
+    payload = {"text": text, "chunks": chunks, "model_id": model_id, "language": language, "task": task}
+
+    output_path = Path(args.output)
+    json_path = Path(args.json)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(text + ("\n" if text else ""), encoding="utf-8")
+    json_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()
+PY
+  chmod +x "$path/scripts/transcribe.py"
+  echo "[INFO] Created $role transcriber: $path/scripts/transcribe.py"
+}
+
+setup_deployment() {
+  local path="$1"
+  local role="$2"
+  local default_model="$3"
+  local default_language="$4"
+  local model_var="$5"
+  local language_var="$6"
+
+  mkdir -p "$path/scripts" "$path/logs" "$path/models" "$path/tmp"
+  write_env "$path" "$role" "$default_model" "$default_language" "$model_var" "$language_var"
+  write_transcriber "$path" "$role"
+}
+
+setup_deployment "$DIALECT_DIR" "Swiss German" "Flurin17/whisper-large-v3-turbo-swiss-german" "" "DIALECT_WHISPER_MODEL_ID" "DIALECT_WHISPER_LANGUAGE"
+setup_deployment "$STANDARD_DIR" "Standard German" "primeline/whisper-large-v3-turbo-german" "german" "STANDARD_WHISPER_MODEL_ID" "STANDARD_WHISPER_LANGUAGE"
+
+check_deployments
+echo "Whisper deployments ready."
+echo "DIALECT_DIR=$DIALECT_DIR"
+echo "STANDARD_DIR=$STANDARD_DIR"

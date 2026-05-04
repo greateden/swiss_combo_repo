@@ -14,12 +14,12 @@ Scope: this folder only.
 ## Aoraki Usage
 
 - Use `module load apptainer/pytorch/24.04` and run Python through `pytorch_exec` when available.
-- Use `bash build.sh` to install dependencies and download the translation model.
+- Use `bash build.sh` to install dependencies, create the default Whisper deployments, download the Whisper models, and download the translation model.
 - Use `bash submit_combo.sh <audio.mp3> [output.txt]` for normal jobs.
 - Do not run full Whisper transcription or full translation jobs directly on the login node.
 - Let `submit_combo.sh` choose a GPU node, or set `PARTITION`/`NODELIST` explicitly when needed.
 - Check `squeue -u "$USER"` and `logs/` while jobs are running.
-- If a run fails with missing `DIALECT_DIR` or `STANDARD_DIR`, first locate Whisper deployments with `find /projects/sciences/computing/$USER -type f -path '*/scripts/transcribe.py' -printf '%h\n'`, then rerun with absolute `DIALECT_DIR=/path/to/dialect` and `STANDARD_DIR=/path/to/standard` values. The deployment directories must contain both `env.sh` and `scripts/transcribe.py`.
+- If a run fails with missing `DIALECT_DIR` or `STANDARD_DIR`, run `bash build.sh` first. If custom deployments are needed, locate them with `find /projects/sciences/computing/$USER -type f -path '*/scripts/transcribe.py' -printf '%h\n'`, then rerun with absolute `DIALECT_DIR=/path/to/dialect` and `STANDARD_DIR=/path/to/standard` values. The deployment directories must contain both `env.sh` and `scripts/transcribe.py`.
 
 ## Pipeline Notes
 

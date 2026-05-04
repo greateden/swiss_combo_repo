@@ -41,6 +41,7 @@ deployment_help() {
 [ERROR] $name does not exist: $value
 [ERROR] Set $name to the $purpose Whisper deployment.
 [ERROR] Expected deployment folders contain scripts/transcribe.py and env.sh.
+[ERROR] If you are using the default deployments, run: bash build.sh
 [ERROR] To locate candidates:
 [ERROR]   find /projects/sciences/computing/$USER -type f -path '*/scripts/transcribe.py' -printf '%h\n'
 [ERROR] Then rerun with absolute paths, for example:

@@ -25,7 +25,12 @@ bash build.sh
 
 This installs Python packages into `python_packages/` and downloads the translation model into `models/`. Both paths are ignored by git.
 
-The two Whisper deployments are expected as sibling folders. Override them if needed:
+The build also creates the default sibling Whisper deployments if they are missing:
+
+- `../swiss-german-swiss`: Swiss German ASR, default model `Flurin17/whisper-large-v3-turbo-swiss-german`
+- `../swiss_german`: Standard German ASR, default model `primeline/whisper-large-v3-turbo-german`
+
+Those deployment folders and their Hugging Face caches stay outside this repo. Override them if needed:
 
 ```bash
 DIALECT_DIR=/path/to/swiss-german-swiss \
@@ -33,7 +38,7 @@ STANDARD_DIR=/path/to/swiss_german \
 bash build.sh
 ```
 
-`DIALECT_DIR` and `STANDARD_DIR` must each point to a Whisper deployment containing `env.sh` and `scripts/transcribe.py`. If the defaults do not exist on Aoraki, locate the deployments with:
+`DIALECT_DIR` and `STANDARD_DIR` must each point to a Whisper deployment containing `env.sh` and `scripts/transcribe.py`. If the defaults do not exist on Aoraki, run `bash build.sh` first. To locate existing deployments:
 
 ```bash
 find /projects/sciences/computing/$USER -type f -path '*/scripts/transcribe.py' -printf '%h\n'
@@ -65,6 +70,7 @@ Intermediate transcripts, translation cache, logs, and outputs stay inside this 
 
 - The translation model downloader avoids the threaded Hugging Face snapshot path that can stall on Aoraki. It downloads only the required Transformers files, skips unused TensorFlow/Rust/Flax weights, disables Xet by default for this setup, and exits clearly if another downloader is already holding Hugging Face locks.
 - Job submission now checks `DIALECT_DIR` and `STANDARD_DIR` before calling `sbatch`, so missing Whisper deployment paths fail immediately with debugging commands instead of producing a failed SLURM job.
+- `build.sh` now creates and warms the default Whisper deployments, including the Swiss German Hugging Face ASR model and the Standard German ASR model.
 
 ## Important Files
 

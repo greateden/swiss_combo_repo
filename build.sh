@@ -8,6 +8,8 @@ if command -v module >/dev/null 2>&1; then
   module load apptainer/pytorch/24.04
 fi
 
+bash scripts/setup_whisper_deployments.sh
+
 python_runner=(python3)
 if command -v pytorch_exec >/dev/null 2>&1; then
   python_runner=(pytorch_exec python3)
@@ -22,9 +24,23 @@ fi
   --cache-dir "$PIP_CACHE_DIR" \
   -r requirements.txt
 
+(
+  cd "$DIALECT_DIR"
+  source ./env.sh
+  "${python_runner[@]}" "$SWISS_COMBO_DIR/scripts/download_whisper_model.py"
+)
+
+(
+  cd "$STANDARD_DIR"
+  source ./env.sh
+  "${python_runner[@]}" "$SWISS_COMBO_DIR/scripts/download_whisper_model.py"
+)
+
 "${python_runner[@]}" scripts/download_translation_model.py
 "${python_runner[@]}" scripts/convert_translation_to_safetensors.py
 
 echo "Build complete."
+echo "Swiss German Whisper deployment: $DIALECT_DIR"
+echo "Standard German Whisper deployment: $STANDARD_DIR"
 echo "Translation model: $TRANSLATION_MODEL_DIR"
 echo "Python packages: $PYTHON_PACKAGES_DIR"
