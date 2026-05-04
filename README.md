@@ -47,6 +47,10 @@ TIME=08:00:00 MEM=120G CPUS=4 PARTITION=aoraki_gpu_L40 bash submit_combo.sh path
 
 Intermediate transcripts, translation cache, logs, and outputs stay inside this folder. Existing `work/<audio>/dialect.json` and `standard.json` are reused unless `FORCE=1` is set.
 
+## Bug Fixes
+
+- The translation model downloader avoids the threaded Hugging Face snapshot path that can stall on Aoraki. It downloads only the required Transformers files, skips unused TensorFlow/Rust/Flax weights, disables Xet by default for this setup, and exits clearly if another downloader is already holding Hugging Face locks.
+
 ## Important Files
 
 - `build.sh`: install dependencies and download/convert the translation model.
