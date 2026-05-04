@@ -1,0 +1,15 @@
+.cache/
+.hf_home/
+.python_userbase/
+audio/
+logs/
+models/
+outputs/
+python_packages/
+tmp/
+work/
+
+*.err
+*.out
+__pycache__/
+*.py[cod]
