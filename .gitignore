@@ -1,6 +1,9 @@
 .cache/
 .hf_home/
+.mypy_cache/
 .python_userbase/
+.pytest_cache/
+.ruff_cache/
 audio/
 logs/
 models/
@@ -11,6 +14,7 @@ swiss_german/
 tmp/
 work/
 
+.coverage
 *.err
 *.out
 __pycache__/

@@ -188,11 +188,18 @@ def main() -> None:
 
     generate_kwargs = configure_whisper_generation(transcriber, task, language)
 
+    if args.timestamps == "word":
+        return_timestamps: bool | str = "word"
+    elif args.timestamps == "chunk":
+        return_timestamps = True
+    else:
+        return_timestamps = False
+
     result = transcriber(
         args.audio,
         chunk_length_s=args.chunk_length_s,
         batch_size=args.batch_size,
-        return_timestamps=args.timestamps != "none",
+        return_timestamps=return_timestamps,
         generate_kwargs=generate_kwargs,
     )
 

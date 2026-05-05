@@ -4,18 +4,69 @@ set -euo pipefail
 cd "$(dirname "$0")"
 source ./env.sh
 
+standard_german=0
+word_by_word=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --standard-german)
+      standard_german=1
+      shift
+      ;;
+    --word-by-word)
+      word_by_word=1
+      shift
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 2
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 if [[ $# -lt 1 ]]; then
-  echo "Usage: bash submit_combo.sh path/to/audio.mp3 [path/to/output.txt]" >&2
+  echo "Usage: bash submit_combo.sh [--standard-german] [--word-by-word] path/to/audio.mp3 [path/to/output.txt|output.json]" >&2
   exit 2
 fi
 
 audio="$1"
-output="${2:-outputs/$(basename "${audio%.*}").parallel.txt}"
+if [[ $# -ge 2 ]]; then
+  output="$2"
+else
+  suffix="parallel"
+  extension="txt"
+  if [[ "$standard_german" == "1" ]]; then
+    suffix="standard"
+  fi
+  if [[ "$word_by_word" == "1" ]]; then
+    suffix="$suffix.wordlinks"
+    extension="json"
+  fi
+  output="outputs/$(basename "${audio%.*}").$suffix.$extension"
+fi
 time_limit="${TIME:-04:00:00}"
 memory="${MEM:-120G}"
 cpus="${CPUS:-4}"
 
-check_deployments
+if [[ "$standard_german" == "1" ]]; then
+  check_standard_deployment
+else
+  check_deployments
+fi
+
+mode_args=()
+if [[ "$standard_german" == "1" ]]; then
+  mode_args+=(--standard-german)
+fi
+if [[ "$word_by_word" == "1" ]]; then
+  mode_args+=(--word-by-word)
+fi
 
 sbatch_args=()
 if [[ -n "${PARTITION:-}" ]]; then
@@ -39,4 +90,4 @@ sbatch \
   --time="$time_limit" \
   --mem="$memory" \
   --cpus-per-task="$cpus" \
-  run_combo.slurm "$audio" "$output"
+  run_combo.slurm "${mode_args[@]}" "$audio" "$output"

@@ -184,6 +184,87 @@ NORMALIZED_TOKEN_REPLACEMENTS = {
     for key, value in TOKEN_REPLACEMENTS.items()
 }
 
+GERMAN_TO_ENGLISH_HINTS = {
+    "aber": {"but"},
+    "allein": {"alone"},
+    "alles": {"all", "everything"},
+    "auch": {"also", "too"},
+    "auf": {"on", "up"},
+    "auge": {"eye"},
+    "augen": {"eyes"},
+    "bank": {"bench", "bank"},
+    "banklein": {"bench", "little"},
+    "bei": {"by", "with", "at"},
+    "bisschen": {"bit", "little"},
+    "blumen": {"flowers"},
+    "brot": {"bread"},
+    "dann": {"then"},
+    "das": {"that", "the", "it"},
+    "dem": {"the"},
+    "den": {"the"},
+    "der": {"the", "who"},
+    "die": {"the", "who"},
+    "dieser": {"this"},
+    "ein": {"a", "an", "one"},
+    "eine": {"a", "an", "one"},
+    "einen": {"a", "an", "one"},
+    "einer": {"a", "an", "one"},
+    "etwas": {"something", "what"},
+    "fast": {"almost"},
+    "frau": {"woman", "mrs"},
+    "gefragt": {"asked"},
+    "gegangen": {"gone", "went"},
+    "gehort": {"hear", "heard", "listen"},
+    "geschaut": {"looked", "seen"},
+    "gesehen": {"seen", "saw"},
+    "gesagt": {"said"},
+    "gross": {"big", "large", "great"},
+    "haben": {"have", "had", "has"},
+    "habe": {"have", "had"},
+    "hat": {"has", "had"},
+    "ich": {"i"},
+    "in": {"in", "into"},
+    "ist": {"is", "was"},
+    "ja": {"yes"},
+    "kein": {"no", "not"},
+    "kommen": {"come"},
+    "kommt": {"comes"},
+    "kopf": {"head"},
+    "kohlrabi": {"kohlrabi"},
+    "laut": {"loud"},
+    "leute": {"people"},
+    "mann": {"man"},
+    "mit": {"with"},
+    "nachgeschaut": {"looked", "checked"},
+    "nacht": {"night"},
+    "nein": {"no"},
+    "nicht": {"not"},
+    "nur": {"only", "just"},
+    "oder": {"or"},
+    "platz": {"place", "square"},
+    "runter": {"down"},
+    "runtergehurt": {"down"},
+    "sagte": {"said"},
+    "schon": {"already"},
+    "schnell": {"quick", "quickly", "fast"},
+    "sie": {"she", "they", "her"},
+    "unter": {"under"},
+    "viel": {"much", "many"},
+    "vielleicht": {"maybe", "perhaps"},
+    "von": {"from", "of"},
+    "vor": {"before", "in", "front"},
+    "was": {"what"},
+    "weg": {"away"},
+    "wenn": {"when", "if"},
+    "wer": {"who"},
+    "wie": {"how", "like"},
+    "wieder": {"again"},
+    "wir": {"we"},
+    "wo": {"where", "when"},
+    "zu": {"to"},
+    "zuruck": {"back"},
+}
+
 
 @dataclass
 class Segment:
@@ -226,12 +307,46 @@ class OutputRow:
     score: float
 
 
+@dataclass
+class TimedWord:
+    text: str
+    start: float
+    end: float
+    estimated: bool = False
+
+
+@dataclass
+class WordToken:
+    text: str
+    source_id: int | None = None
+    start: float | None = None
+    end: float | None = None
+    estimated: bool = False
+
+
+WORD_OR_PUNCT_RE = re.compile(r"\w+(?:['’]\w+)?|[^\w\s]", re.UNICODE)
+WORD_RE = re.compile(r"\w+(?:['’]\w+)?", re.UNICODE)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build aligned Swiss German / Standard German / English text blocks.")
-    parser.add_argument("--dialect-json", required=True)
+    parser.add_argument("--dialect-json")
     parser.add_argument("--standard-json", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--dialect-words-json", help="Optional Swiss German word-timestamp JSON for --word-by-word.")
+    parser.add_argument("--standard-words-json", help="Optional Standard German word-timestamp JSON for --word-by-word.")
+    parser.add_argument(
+        "--standard-german",
+        action="store_true",
+        help="Input audio is already Standard German; output only Standard German and English.",
+    )
+    parser.add_argument(
+        "--word-by-word",
+        action="store_true",
+        help="Write source-anchored wordlink JSON instead of text/SRT output.",
+    )
     parser.add_argument("--translation-model-dir", default=os.environ.get("TRANSLATION_MODEL_DIR"))
+    parser.add_argument("--alignment-model-dir", default=os.environ.get("ALIGNMENT_MODEL_DIR"))
     parser.add_argument("--max-translate-chars", type=int, default=450)
     parser.add_argument("--lookahead", type=int, default=10)
     parser.add_argument("--max-span", type=int, default=3)
@@ -280,6 +395,47 @@ def load_segments(path: Path) -> list[Segment]:
         last_end = max(last_end, end)
         segments.append(Segment(start, end, text))
     return segments
+
+
+def word_surfaces(text: str) -> list[str]:
+    return [match.group(0) for match in WORD_RE.finditer(text)]
+
+
+def split_timed_chunk(text: str, start: float, end: float) -> list[TimedWord]:
+    words = word_surfaces(text)
+    if not words:
+        return []
+    duration = max(end - start, 0.001)
+    timed_words: list[TimedWord] = []
+    for index, word in enumerate(words):
+        word_start = start + duration * index / len(words)
+        word_end = start + duration * (index + 1) / len(words)
+        timed_words.append(TimedWord(word, word_start, word_end, estimated=len(words) > 1))
+    return timed_words
+
+
+def load_timed_words(path: Path | None) -> list[TimedWord]:
+    if path is None or not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding="utf-8"))
+    chunks = data.get("chunks") if isinstance(data, dict) else None
+    if not chunks:
+        return []
+
+    timed_words: list[TimedWord] = []
+    last_end = 0.0
+    for chunk in chunks:
+        text = clean_text(str(chunk.get("text", "")))
+        if not text:
+            continue
+        timestamp = chunk.get("timestamp") or chunk.get("timestamps") or (None, None)
+        start = timestamp_value(timestamp[0] if len(timestamp) > 0 else None, last_end)
+        end = timestamp_value(timestamp[1] if len(timestamp) > 1 else None, start)
+        if end <= start:
+            end = start + 0.001
+        timed_words.extend(split_timed_chunk(text, start, end))
+        last_end = max(last_end, end)
+    return timed_words
 
 
 def split_sentences(text: str) -> list[str]:
@@ -664,25 +820,381 @@ def srt_safe_text(text: str) -> str:
     return clean_text(text).replace("\n", " ")
 
 
-def write_srt(path: Path, rows: list[OutputRow], english_lines: list[str]) -> None:
+def visible_lines(row: OutputRow, english_text: str, standard_german_only: bool, word_by_word: bool) -> list[str]:
+    lines = [row.standard_text, english_text] if standard_german_only else [row.dialect_text, row.standard_text, english_text]
+    return lines
+
+
+def write_srt(path: Path, rows: list[OutputRow], english_lines: list[str], standard_german_only: bool, word_by_word: bool) -> None:
     blocks: list[str] = []
     previous_end = 0.0
     for index, (row, english_text) in enumerate(zip(rows, english_lines), start=1):
         start = max(row.start, previous_end)
         end = max(row.end, start + 0.001)
         previous_end = end
+        cue_lines = [srt_safe_text(line) for line in visible_lines(row, english_text, standard_german_only, word_by_word)]
         blocks.append(
             "\n".join(
                 [
                     str(index),
                     f"{format_srt_timestamp(start)} --> {format_srt_timestamp(end)}",
-                    srt_safe_text(row.dialect_text),
-                    srt_safe_text(row.standard_text),
-                    srt_safe_text(english_text),
+                    *cue_lines,
                 ]
             )
         )
     atomic_write_text(path, "\n\n".join(blocks).rstrip() + "\n")
+
+
+def normalized_word(text: str) -> str:
+    return normalize_for_alignment(text)
+
+
+def expanded_normalized_words(text: str) -> set[str]:
+    normalized = normalized_word(text)
+    if not normalized:
+        return set()
+    expanded: set[str] = set()
+    for token in normalized.split():
+        expanded.add(token)
+        replacement = NORMALIZED_TOKEN_REPLACEMENTS.get(token)
+        if replacement:
+            expanded.update(replacement.split())
+    return expanded
+
+
+def bilingual_hint_match(source_words: set[str], target_words: set[str]) -> bool:
+    if not source_words or not target_words:
+        return False
+    for source_word in source_words:
+        if GERMAN_TO_ENGLISH_HINTS.get(source_word, set()) & target_words:
+            return True
+    return False
+
+
+def estimate_timed_tokens(text: str, start: float, end: float) -> list[WordToken]:
+    words = word_surfaces(text)
+    if not words:
+        return []
+    duration = max(end - start, 0.001)
+    tokens: list[WordToken] = []
+    for index, word in enumerate(words):
+        word_start = start + duration * index / len(words)
+        word_end = start + duration * (index + 1) / len(words)
+        tokens.append(WordToken(text=word, start=word_start, end=word_end, estimated=True))
+    return tokens
+
+
+def timed_words_for_span(words: list[TimedWord], start: float, end: float) -> list[TimedWord]:
+    if not words:
+        return []
+    margin = 0.35
+    selected: list[TimedWord] = []
+    for word in words:
+        center = (word.start + word.end) / 2
+        if start - margin <= center <= end + margin:
+            selected.append(word)
+    return selected
+
+
+def source_tokens_for_row(text: str, start: float, end: float, timed_words: list[TimedWord]) -> list[WordToken]:
+    words = word_surfaces(text)
+    if not words:
+        return []
+    selected = timed_words_for_span(timed_words, start, end)
+    if not selected:
+        return estimate_timed_tokens(text, start, end)
+    if len(selected) != len(words) and all(word.estimated for word in selected):
+        return estimate_timed_tokens(text, start, end)
+    if len(selected) >= max(len(words) * 2, len(words) + 4):
+        return estimate_timed_tokens(text, start, end)
+
+    tokens: list[WordToken] = []
+    for index, word in enumerate(words):
+        selected_index = round(index * (len(selected) - 1) / max(len(words) - 1, 1)) if len(selected) > 1 else 0
+        timed_word = selected[min(selected_index, len(selected) - 1)]
+        word_start = min(max(timed_word.start, start), end)
+        if word_start >= end:
+            word_start = max(start, end - 0.001)
+        word_end = min(max(timed_word.end, word_start + 0.001), end)
+        tokens.append(
+            WordToken(
+                text=word,
+                start=word_start,
+                end=word_end,
+                estimated=timed_word.estimated or len(selected) != len(words),
+            )
+        )
+    return tokens
+
+
+def target_tokens_for_text(text: str) -> list[WordToken]:
+    return [WordToken(text=word) for word in word_surfaces(text)]
+
+
+class NeuralWordAligner:
+    def __init__(self, model_dir: Path | None):
+        self.model_dir = model_dir
+        self.tokenizer = None
+        self.model = None
+        self.device = "cpu"
+        self.load_failed = False
+        self.available = bool(
+            model_dir
+            and (model_dir / "config.json").exists()
+            and (model_dir / "vocab.txt").exists()
+            and ((model_dir / "model.safetensors").exists() or (model_dir / "pytorch_model.bin").exists())
+        )
+
+    def load(self) -> None:
+        if self.model is not None or not self.available or self.load_failed:
+            return
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+
+        try:
+            self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+            self.tokenizer = AutoTokenizer.from_pretrained(str(self.model_dir), local_files_only=True, use_fast=True)
+            self.model = AutoModel.from_pretrained(str(self.model_dir), local_files_only=True)
+            self.model.to(self.device)
+            self.model.eval()
+        except Exception as error:
+            self.load_failed = True
+            self.available = False
+            print(f"[WARN] Neural word alignment unavailable: {error}", flush=True)
+
+    def word_embeddings(self, words: list[str]):
+        import torch
+
+        self.load()
+        if self.model is None or self.tokenizer is None or not words:
+            return None
+        encoded = self.tokenizer(
+            words,
+            is_split_into_words=True,
+            return_tensors="pt",
+            truncation=True,
+            max_length=256,
+        )
+        word_ids = encoded.word_ids()
+        encoded = {key: value.to(self.device) for key, value in encoded.items()}
+        with torch.no_grad():
+            output = self.model(**encoded, output_hidden_states=True)
+        layer_index = min(8, len(output.hidden_states) - 1)
+        hidden = output.hidden_states[layer_index][0]
+        vectors = []
+        for word_index in range(len(words)):
+            positions = [index for index, value in enumerate(word_ids) if value == word_index]
+            if not positions:
+                vectors.append(torch.zeros(hidden.shape[-1], device=self.device))
+            else:
+                vectors.append(hidden[positions].mean(dim=0))
+        return torch.nn.functional.normalize(torch.stack(vectors), dim=1)
+
+    def neural_pairs(self, source_words: list[str], target_words: list[str], threshold: float = 0.56) -> list[tuple[int, int, float]]:
+        if not self.available or not source_words or not target_words:
+            return []
+        source_embeddings = self.word_embeddings(source_words)
+        target_embeddings = self.word_embeddings(target_words)
+        if source_embeddings is None or target_embeddings is None:
+            return []
+        scores = source_embeddings @ target_embeddings.T
+        pairs: list[tuple[int, int, float]] = []
+        for source_index in range(scores.shape[0]):
+            for target_index in range(scores.shape[1]):
+                score = float(scores[source_index, target_index].item())
+                if score >= threshold:
+                    pairs.append((source_index, target_index, score))
+        pairs.sort(key=lambda item: item[2], reverse=True)
+        return pairs
+
+    def align(self, source_words: list[str], target_words: list[str]) -> dict[int, int]:
+        source_to_target: dict[int, int] = {}
+        used_targets: set[int] = set()
+        source_norms = [expanded_normalized_words(word) for word in source_words]
+        target_norms = [expanded_normalized_words(word) for word in target_words]
+
+        def exact_match(left: set[str], right: set[str]) -> bool:
+            if not left or not right:
+                return False
+            if left & right:
+                return True
+            if bilingual_hint_match(left, right):
+                return True
+            if any(token.isdigit() for token in left | right):
+                return bool(left & right)
+            if left & ALIGNMENT_NAMES and right & ALIGNMENT_NAMES:
+                return bool((left & ALIGNMENT_NAMES) & (right & ALIGNMENT_NAMES))
+            return False
+
+        for source_index, left in enumerate(source_norms):
+            for target_index, right in enumerate(target_norms):
+                if target_index in used_targets:
+                    continue
+                if exact_match(left, right):
+                    source_to_target[source_index] = target_index
+                    used_targets.add(target_index)
+                    break
+
+        used_sources = set(source_to_target)
+        try:
+            neural_pairs = self.neural_pairs(source_words, target_words)
+        except Exception as error:
+            print(f"[WARN] Neural word alignment unavailable: {error}", flush=True)
+            neural_pairs = []
+
+        for source_index, target_index, _score in neural_pairs:
+            if source_index in used_sources or target_index in used_targets:
+                continue
+            source_to_target[source_index] = target_index
+            used_sources.add(source_index)
+            used_targets.add(target_index)
+
+        return source_to_target
+
+
+def set_source_ids(tokens: list[WordToken]) -> None:
+    for index, token in enumerate(tokens):
+        token.source_id = index
+
+
+def source_time_by_id(tokens: list[WordToken]) -> dict[int, WordToken]:
+    return {token.source_id: token for token in tokens if token.source_id is not None}
+
+
+def apply_projected_ids(
+    source_tokens: list[WordToken],
+    target_tokens: list[WordToken],
+    source_to_target: dict[int, int],
+    source_times: dict[int, WordToken] | None = None,
+) -> None:
+    times = source_times or source_time_by_id(source_tokens)
+    used_source_ids: set[int] = set()
+    for source_index, target_index in sorted(source_to_target.items()):
+        if source_index >= len(source_tokens) or target_index >= len(target_tokens):
+            continue
+        source_id = source_tokens[source_index].source_id
+        if source_id is None or source_id in used_source_ids:
+            continue
+        source_time = times.get(source_id)
+        target = target_tokens[target_index]
+        target.source_id = source_id
+        if source_time:
+            target.start = source_time.start
+            target.end = source_time.end
+            target.estimated = source_time.estimated
+        used_source_ids.add(source_id)
+
+
+def fill_unassigned_from_direct_source(
+    source_tokens: list[WordToken],
+    target_tokens: list[WordToken],
+    source_to_target: dict[int, int],
+) -> None:
+    source_times = source_time_by_id(source_tokens)
+    used_target_indexes = {index for index, token in enumerate(target_tokens) if token.source_id is not None}
+    used_source_ids = {token.source_id for token in target_tokens if token.source_id is not None}
+    for source_index, target_index in sorted(source_to_target.items()):
+        if target_index in used_target_indexes or source_index >= len(source_tokens) or target_index >= len(target_tokens):
+            continue
+        source_id = source_tokens[source_index].source_id
+        if source_id is None or source_id in used_source_ids:
+            continue
+        target = target_tokens[target_index]
+        source_time = source_times.get(source_id)
+        target.source_id = source_id
+        if source_time:
+            target.start = source_time.start
+            target.end = source_time.end
+            target.estimated = source_time.estimated
+        used_target_indexes.add(target_index)
+        used_source_ids.add(source_id)
+
+
+def token_to_json(token: WordToken) -> dict[str, object]:
+    payload: dict[str, object] = {"text": token.text, "source_id": token.source_id}
+    if token.start is not None:
+        payload["start"] = round(token.start, 3)
+    if token.end is not None:
+        payload["end"] = round(token.end, 3)
+    if token.estimated:
+        payload["estimated"] = True
+    return payload
+
+
+def make_wordlink_sentence(
+    index: int,
+    row: OutputRow,
+    english_text: str,
+    source_words: list[TimedWord],
+    aligner: NeuralWordAligner,
+    standard_german_only: bool,
+) -> dict[str, object]:
+    if standard_german_only:
+        source_tokens = source_tokens_for_row(row.standard_text, row.start, row.end, source_words)
+        set_source_ids(source_tokens)
+        english_tokens = target_tokens_for_text(english_text)
+        apply_projected_ids(
+            source_tokens,
+            english_tokens,
+            aligner.align([token.text for token in source_tokens], [token.text for token in english_tokens]),
+        )
+        lines = [
+            {"role": "source", "language": "de", "text": row.standard_text, "tokens": [token_to_json(token) for token in source_tokens]},
+            {"role": "english", "language": "en", "text": english_text, "tokens": [token_to_json(token) for token in english_tokens]},
+        ]
+        mode = "standard_german"
+    else:
+        source_tokens = source_tokens_for_row(row.dialect_text, row.start, row.end, source_words)
+        set_source_ids(source_tokens)
+        standard_tokens = target_tokens_for_text(row.standard_text)
+        english_tokens = target_tokens_for_text(english_text)
+
+        dialect_to_standard = aligner.align([token.text for token in source_tokens], [token.text for token in standard_tokens])
+        apply_projected_ids(source_tokens, standard_tokens, dialect_to_standard)
+
+        standard_to_english = aligner.align([token.text for token in standard_tokens], [token.text for token in english_tokens])
+        apply_projected_ids(standard_tokens, english_tokens, standard_to_english, source_time_by_id(source_tokens))
+
+        direct_dialect_to_english = aligner.align([token.text for token in source_tokens], [token.text for token in english_tokens])
+        fill_unassigned_from_direct_source(source_tokens, english_tokens, direct_dialect_to_english)
+
+        lines = [
+            {"role": "source", "language": "gsw", "text": row.dialect_text, "tokens": [token_to_json(token) for token in source_tokens]},
+            {"role": "standard", "language": "de", "text": row.standard_text, "tokens": [token_to_json(token) for token in standard_tokens]},
+            {"role": "english", "language": "en", "text": english_text, "tokens": [token_to_json(token) for token in english_tokens]},
+        ]
+        mode = "swiss_german"
+
+    return {
+        "index": index,
+        "start": round(row.start, 3),
+        "end": round(row.end, 3),
+        "mode": mode,
+        "lines": lines,
+    }
+
+
+def write_wordlinks_json(
+    path: Path,
+    rows: list[OutputRow],
+    english_lines: list[str],
+    source_words: list[TimedWord],
+    alignment_model_dir: Path | None,
+    standard_german_only: bool,
+) -> None:
+    aligner = NeuralWordAligner(alignment_model_dir)
+    if not aligner.available:
+        print("[WARN] Alignment model not found; writing exact-match word links only.", flush=True)
+    sentences = [
+        make_wordlink_sentence(index, row, english_text, source_words, aligner, standard_german_only)
+        for index, (row, english_text) in enumerate(zip(rows, english_lines))
+    ]
+    payload = {
+        "format": "swiss-combo-wordlinks-v1",
+        "mode": "standard_german" if standard_german_only else "swiss_german",
+        "sentences": sentences,
+    }
+    atomic_write_text(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
 
 def translate_one_text(text: str, tokenizer, model, device: str, max_chars: int) -> str:
@@ -741,23 +1253,45 @@ def translate_texts(
     return translations
 
 
+def rows_from_standard_blocks(standard_blocks: list[Block]) -> list[OutputRow]:
+    return [
+        OutputRow(
+            dialect_text="",
+            standard_text=block.text,
+            start=block.start,
+            end=max(block.end, block.start + 0.001),
+            score=1.0,
+        )
+        for block in standard_blocks
+    ]
+
+
 def main() -> None:
     args = parse_args()
-    dialect_blocks = make_sentence_blocks(load_segments(Path(args.dialect_json)))
     standard_blocks = make_sentence_blocks(load_segments(Path(args.standard_json)))
-    if not dialect_blocks:
-        raise RuntimeError("No Swiss German timestamp blocks found.")
     if not standard_blocks:
         raise RuntimeError("No Standard German timestamp blocks found.")
 
-    aligned_spans, skipped_dialect, skipped_standard = align_blocks(
-        dialect_blocks=dialect_blocks,
-        standard_blocks=standard_blocks,
-        lookahead=args.lookahead,
-        max_span=args.max_span,
-        min_score=args.min_score,
-    )
-    rows = expand_aligned_spans(aligned_spans)
+    if args.standard_german:
+        dialect_blocks: list[Block] = []
+        skipped_dialect: list[Block] = []
+        skipped_standard: list[Block] = []
+        rows = rows_from_standard_blocks(standard_blocks)
+    else:
+        if not args.dialect_json:
+            raise RuntimeError("Pass --dialect-json, or use --standard-german for Standard German input audio.")
+        dialect_blocks = make_sentence_blocks(load_segments(Path(args.dialect_json)))
+        if not dialect_blocks:
+            raise RuntimeError("No Swiss German timestamp blocks found.")
+
+        aligned_spans, skipped_dialect, skipped_standard = align_blocks(
+            dialect_blocks=dialect_blocks,
+            standard_blocks=standard_blocks,
+            lookahead=args.lookahead,
+            max_span=args.max_span,
+            min_score=args.min_score,
+        )
+        rows = expand_aligned_spans(aligned_spans)
     if args.limit > 0:
         rows = rows[: args.limit]
 
@@ -785,20 +1319,41 @@ def main() -> None:
 
     output = Path(args.output).resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
+    if args.word_by_word:
+        if args.standard_german:
+            source_words_path = Path(args.standard_words_json or args.standard_json).resolve()
+        else:
+            source_words_path = Path(args.dialect_words_json or args.dialect_json).resolve()
+        source_words = load_timed_words(source_words_path)
+        alignment_model_dir = Path(args.alignment_model_dir).resolve() if args.alignment_model_dir else None
+        write_wordlinks_json(
+            output,
+            rows,
+            english_lines,
+            source_words,
+            alignment_model_dir,
+            args.standard_german,
+        )
+        print(f"Wrote {output}")
+        return
+
     lines: list[str] = []
     for row, english_text in zip(rows, english_lines):
-        lines.extend([row.dialect_text, row.standard_text, english_text, ""])
+        lines.extend([*visible_lines(row, english_text, args.standard_german, args.word_by_word), ""])
     atomic_write_text(output, "\n".join(lines).rstrip() + "\n")
     print(f"Wrote {output}")
 
     srt_output = Path(args.srt_output).resolve() if args.srt_output else output.with_suffix(".srt")
-    write_srt(srt_output, rows, english_lines)
+    write_srt(srt_output, rows, english_lines, args.standard_german, args.word_by_word)
     print(f"Wrote {srt_output}")
-    print(
-        "Aligned "
-        f"{len(rows)} rows from {len(dialect_blocks)} Swiss German and {len(standard_blocks)} Standard German sentences "
-        f"({len(skipped_dialect)} Swiss German skipped, {len(skipped_standard)} Standard German skipped)."
-    )
+    if args.standard_german:
+        print(f"Wrote {len(rows)} rows from {len(standard_blocks)} Standard German sentences.")
+    else:
+        print(
+            "Aligned "
+            f"{len(rows)} rows from {len(dialect_blocks)} Swiss German and {len(standard_blocks)} Standard German sentences "
+            f"({len(skipped_dialect)} Swiss German skipped, {len(skipped_standard)} Standard German skipped)."
+        )
 
 
 if __name__ == "__main__":

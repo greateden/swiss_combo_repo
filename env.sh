@@ -17,6 +17,8 @@ export STANDARD_DIR="${STANDARD_DIR:-$(resolve_dir "$SWISS_COMBO_DIR/swiss_germa
 
 export TRANSLATION_MODEL_ID="${TRANSLATION_MODEL_ID:-Helsinki-NLP/opus-mt-de-en}"
 export TRANSLATION_MODEL_DIR="${TRANSLATION_MODEL_DIR:-$SWISS_COMBO_DIR/models/Helsinki-NLP__opus-mt-de-en}"
+export ALIGNMENT_MODEL_ID="${ALIGNMENT_MODEL_ID:-bert-base-multilingual-cased}"
+export ALIGNMENT_MODEL_DIR="${ALIGNMENT_MODEL_DIR:-$SWISS_COMBO_DIR/models/bert-base-multilingual-cased}"
 export PYTHON_PACKAGES_DIR="${PYTHON_PACKAGES_DIR:-$SWISS_COMBO_DIR/python_packages}"
 
 export HF_HOME="$SWISS_COMBO_DIR/.hf_home"
@@ -52,10 +54,22 @@ EOF
 
 check_deployments() {
   local failed=0
+  check_dialect_deployment || failed=1
+  check_standard_deployment || failed=1
+  return "$failed"
+}
+
+check_dialect_deployment() {
+  local failed=0
   if [[ ! -d "$DIALECT_DIR" || ! -f "$DIALECT_DIR/scripts/transcribe.py" || ! -f "$DIALECT_DIR/env.sh" ]]; then
     deployment_help "DIALECT_DIR" "$DIALECT_DIR" "Swiss German"
     failed=1
   fi
+  return "$failed"
+}
+
+check_standard_deployment() {
+  local failed=0
   if [[ ! -d "$STANDARD_DIR" || ! -f "$STANDARD_DIR/scripts/transcribe.py" || ! -f "$STANDARD_DIR/env.sh" ]]; then
     deployment_help "STANDARD_DIR" "$STANDARD_DIR" "Standard German"
     failed=1
@@ -66,4 +80,4 @@ check_deployments() {
 mkdir -p \
   "$SWISS_COMBO_DIR"/{audio,logs,models,outputs,python_packages,scripts,tmp,work} \
   "$HF_HOME" "$HF_HUB_CACHE" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" \
-  "$XDG_CACHE_HOME" "$PIP_CACHE_DIR" "$MPLCONFIGDIR" "$TRANSLATION_MODEL_DIR"
+  "$XDG_CACHE_HOME" "$PIP_CACHE_DIR" "$MPLCONFIGDIR" "$TRANSLATION_MODEL_DIR" "$ALIGNMENT_MODEL_DIR"
