@@ -44,6 +44,8 @@ The build also creates the default Whisper deployments if they are missing:
 - `swiss-german-swiss/`: Swiss German audio to Swiss German-style text
 - `swiss_german/`: Swiss German audio to Standard German text
 
+The generated deployments force Whisper language `de`, which helps reduce cases where the Swiss German model drifts into English or unrelated scripts.
+
 If you already have your own deployments, point to them like this:
 
 ```bash
@@ -162,6 +164,43 @@ That writes:
 ```text
 outputs/Zambo_Hoerspiele_fuer_Kinder_radio_AUDI20260415_NR_0022_684146339442420ca5187a1c4f5e92b1.parallel.wordlinks.json
 ```
+
+## View Wordlinks
+
+Open the JSON viewer:
+
+```bash
+python3 subtitle_viewer.py outputs/audio.parallel.wordlinks.json
+```
+
+The viewer can:
+
+- show the current sentence and highlighted word timing
+- swap the language order
+- scale the GUI larger or smaller
+- show elapsed time and minutes remaining
+- apply a subtitle offset if you are playing audio somewhere else
+
+If `pygame` is installed on your laptop, the viewer can also load and play an audio file directly:
+
+```bash
+python3 -m pip install pygame
+python3 subtitle_viewer.py outputs/audio.parallel.wordlinks.json
+```
+
+Then click `Load Audio`.
+
+## Lighter Local Pipeline Ideas
+
+The current pipeline uses large Whisper deployments because Swiss German speech recognition is hard. For a laptop-friendly version, the most practical direction is:
+
+- use `faster-whisper` / CTranslate2 with int8 quantization for lower CPU/GPU memory use
+- try smaller Whisper models first, such as `small` or `medium`, and accept lower accuracy
+- try Distil-Whisper for faster, smaller Whisper-style transcription
+- keep translation local with OPUS-MT or another small local machine-translation model
+- keep word alignment local with multilingual BERT embeddings plus the current dictionary hints
+
+The likely tradeoff is accuracy. A smaller model may run on a normal laptop, but it may produce more English hallucinations or worse Swiss German spelling. For best quality, the ASR model choice matters more than the viewer or JSON format.
 
 ## Useful Options
 

@@ -15,10 +15,11 @@ Scope: this folder only.
 
 - Use `module load apptainer/pytorch/24.04` and run Python through `pytorch_exec` when available.
 - Use `bash build.sh` to install dependencies, create the default Whisper deployments, download the Whisper models, download the translation model, and download the multilingual word-alignment model.
-- Default Whisper roles: `DIALECT_DIR` is Swiss German speech to Swiss German-style text, and `STANDARD_DIR` is Swiss German speech to Standard German text. Do not replace `STANDARD_DIR` with a generic German ASR model unless the user explicitly asks for that tradeoff.
+- Default Whisper roles: `DIALECT_DIR` is Swiss German speech to Swiss German-style text, and `STANDARD_DIR` is Swiss German speech to Standard German text. Both generated deployments force Whisper language `de` to reduce English/other-language drift. Do not replace `STANDARD_DIR` with a generic German ASR model unless the user explicitly asks for that tradeoff.
 - Use `bash submit_combo.sh <audio.mp3> [output.txt]` for normal subtitle jobs.
 - Use `bash submit_combo.sh --word-by-word <audio.mp3> [output.json]` for source-anchored learning JSON. This mode writes wordlinks JSON only, not `.txt` or `.srt` subtitles.
 - Use `bash submit_combo.sh --standard-german <audio.mp3>` when the input audio is already Standard German. Combine it with `--word-by-word` for Standard German to English wordlinks.
+- Use `python3 subtitle_viewer.py <wordlinks.json>` to inspect wordlinks output locally. Optional audio playback in the viewer depends on `pygame`; without it, the viewer remains a JSON/timer display with manual offset controls.
 - Do not run full Whisper transcription or full translation jobs directly on the login node.
 - Do not run Whisper, translation, or neural word-alignment inference on the login/root node. Always submit through SLURM, even for short audio clips.
 - Let `submit_combo.sh` choose a GPU node, or set `PARTITION`/`NODELIST` explicitly when needed.
@@ -33,3 +34,4 @@ Scope: this folder only.
 - Translation is resumable through `work/<audio>/translations.jsonl`.
 - Wordlink `source_id` values must always come from the original language line: Swiss German for normal mode, Standard German for `--standard-german`. Target-language extra words should remain unlinked with `source_id: null`.
 - The wordlink builder may use bilingual hint rules plus the multilingual alignment model. Keep regression coverage in `scripts/test_wordlinks.py` when changing this behavior.
+- When Whisper word timestamps are zero-length or inconsistent with the sentence text, the builder should estimate sane per-word timing inside the sentence span instead of clustering all words at the end.

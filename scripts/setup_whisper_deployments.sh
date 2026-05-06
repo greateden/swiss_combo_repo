@@ -236,8 +236,8 @@ setup_deployment() {
   write_transcriber "$path" "$role" "$default_path"
 }
 
-setup_deployment "$DIALECT_DIR" "Swiss German" "notebotIE/whisper-large-v2-swiss-german" "" "DIALECT_WHISPER_MODEL_ID" "DIALECT_WHISPER_LANGUAGE" "$default_dialect_dir"
-setup_deployment "$STANDARD_DIR" "Standard German" "Flurin17/whisper-large-v3-turbo-swiss-german" "" "STANDARD_WHISPER_MODEL_ID" "STANDARD_WHISPER_LANGUAGE" "$default_standard_dir"
+setup_deployment "$DIALECT_DIR" "Swiss German" "notebotIE/whisper-large-v2-swiss-german" "de" "DIALECT_WHISPER_MODEL_ID" "DIALECT_WHISPER_LANGUAGE" "$default_dialect_dir"
+setup_deployment "$STANDARD_DIR" "Standard German" "Flurin17/whisper-large-v3-turbo-swiss-german" "de" "STANDARD_WHISPER_MODEL_ID" "STANDARD_WHISPER_LANGUAGE" "$default_standard_dir"
 
 check_deployments
 echo "Whisper deployments ready."

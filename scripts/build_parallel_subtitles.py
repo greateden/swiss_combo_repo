@@ -414,6 +414,29 @@ def split_timed_chunk(text: str, start: float, end: float) -> list[TimedWord]:
     return timed_words
 
 
+def repair_timed_words(words: list[TimedWord]) -> list[TimedWord]:
+    if not words:
+        return []
+    words = sorted(words, key=lambda word: (word.start + word.end) / 2)
+    centers = [(word.start + word.end) / 2 for word in words]
+    repaired: list[TimedWord] = []
+    for index, word in enumerate(words):
+        duration = word.end - word.start
+        if duration > 0.03:
+            repaired.append(word)
+            continue
+
+        previous_center = centers[index - 1] if index > 0 else centers[index] - 0.35
+        next_center = centers[index + 1] if index + 1 < len(centers) else centers[index] + 0.35
+        start = (previous_center + centers[index]) / 2
+        end = (centers[index] + next_center) / 2
+        if end <= start:
+            start = centers[index] - 0.12
+            end = centers[index] + 0.12
+        repaired.append(TimedWord(word.text, max(start, 0.0), max(end, start + 0.001), estimated=True))
+    return repaired
+
+
 def load_timed_words(path: Path | None) -> list[TimedWord]:
     if path is None or not path.exists():
         return []
@@ -435,7 +458,7 @@ def load_timed_words(path: Path | None) -> list[TimedWord]:
             end = start + 0.001
         timed_words.extend(split_timed_chunk(text, start, end))
         last_end = max(last_end, end)
-    return timed_words
+    return repair_timed_words(timed_words)
 
 
 def split_sentences(text: str) -> list[str]:
@@ -907,6 +930,11 @@ def source_tokens_for_row(text: str, start: float, end: float, timed_words: list
         return estimate_timed_tokens(text, start, end)
     if len(selected) >= max(len(words) * 2, len(words) + 4):
         return estimate_timed_tokens(text, start, end)
+    row_norms = [expanded_normalized_words(word) for word in words]
+    selected_norms = [expanded_normalized_words(word.text) for word in selected]
+    overlap = sum(1 for row_norm in row_norms if any(row_norm & selected_norm for selected_norm in selected_norms))
+    if len(selected) != len(words) and overlap < min(len(words), len(selected)):
+        return estimate_timed_tokens(text, start, end)
 
     tokens: list[WordToken] = []
     for index, word in enumerate(words):
@@ -1013,29 +1041,40 @@ class NeuralWordAligner:
         source_norms = [expanded_normalized_words(word) for word in source_words]
         target_norms = [expanded_normalized_words(word) for word in target_words]
 
-        def exact_match(left: set[str], right: set[str]) -> bool:
+        def lexical_score(left: set[str], right: set[str], source_index: int, target_index: int) -> float:
             if not left or not right:
-                return False
+                return 0.0
+            score = 0.0
             if left & right:
-                return True
-            if bilingual_hint_match(left, right):
-                return True
+                score = 3.0
             if any(token.isdigit() for token in left | right):
-                return bool(left & right)
+                score = max(score, 3.2 if left & right else 0.0)
             if left & ALIGNMENT_NAMES and right & ALIGNMENT_NAMES:
-                return bool((left & ALIGNMENT_NAMES) & (right & ALIGNMENT_NAMES))
-            return False
+                score = max(score, 3.3 if (left & ALIGNMENT_NAMES) & (right & ALIGNMENT_NAMES) else 0.0)
+            if bilingual_hint_match(left, right):
+                score = max(score, 2.9)
+            if score <= 0.0:
+                return 0.0
+            source_position = source_index / max(len(source_words) - 1, 1)
+            target_position = target_index / max(len(target_words) - 1, 1)
+            return score - (0.25 * abs(source_position - target_position))
 
+        lexical_pairs: list[tuple[int, int, float]] = []
         for source_index, left in enumerate(source_norms):
             for target_index, right in enumerate(target_norms):
-                if target_index in used_targets:
-                    continue
-                if exact_match(left, right):
-                    source_to_target[source_index] = target_index
-                    used_targets.add(target_index)
-                    break
+                score = lexical_score(left, right, source_index, target_index)
+                if score > 0.0:
+                    lexical_pairs.append((source_index, target_index, score))
 
-        used_sources = set(source_to_target)
+        lexical_pairs.sort(key=lambda item: item[2], reverse=True)
+        used_sources: set[int] = set()
+        for source_index, target_index, _score in lexical_pairs:
+            if source_index in used_sources or target_index in used_targets:
+                continue
+            source_to_target[source_index] = target_index
+            used_sources.add(source_index)
+            used_targets.add(target_index)
+
         try:
             neural_pairs = self.neural_pairs(source_words, target_words)
         except Exception as error:
@@ -1292,6 +1331,9 @@ def main() -> None:
             min_score=args.min_score,
         )
         rows = expand_aligned_spans(aligned_spans)
+        if args.word_by_word and skipped_dialect:
+            rows.extend(make_output_row([block], [], 0.0) for block in skipped_dialect)
+            rows.sort(key=lambda row: (row.start, row.end, row.dialect_text))
     if args.limit > 0:
         rows = rows[: args.limit]
 

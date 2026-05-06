@@ -92,10 +92,16 @@ def test_reordered_english_question() -> None:
     assert english[1]["source_id"] == 0
 
 
+def test_repeated_words_keep_local_position() -> None:
+    aligner = NeuralWordAligner(Path("missing-model"))
+    assert aligner.align(["Mika", "saw", "Mika"], ["Mika", "Mika"]) == {0: 0, 2: 1}
+
+
 def main() -> None:
     test_swiss_german_mika_ids()
     test_standard_german_mode()
     test_reordered_english_question()
+    test_repeated_words_keep_local_position()
     print("wordlink tests passed")
 
 
