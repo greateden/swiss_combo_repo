@@ -85,7 +85,7 @@ else
       break
     fi
 
-    echo "[INFO] No unrestricted GPU node currently satisfies MEM=${memory} CPUS=${cpus}; waiting ${gpu_wait_seconds}s before retry ${attempt}." >&2
+    echo "[INFO] No unrestricted GPU node currently satisfies CPU_MEM=${memory} CPUS=${cpus}; waiting ${gpu_wait_seconds}s before retry ${attempt}." >&2
     sleep "$gpu_wait_seconds"
     attempt=$((attempt + 1))
   done
