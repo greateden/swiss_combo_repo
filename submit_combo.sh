@@ -53,6 +53,7 @@ fi
 time_limit="${TIME:-04:00:00}"
 memory="${MEM:-120G}"
 cpus="${CPUS:-4}"
+gpu_wait_seconds="${GPU_WAIT_SECONDS:-60}"
 
 if [[ "$standard_german" == "1" ]]; then
   check_standard_deployment
@@ -75,14 +76,19 @@ if [[ -n "${PARTITION:-}" ]]; then
     sbatch_args+=(--nodelist="$NODELIST")
   fi
 else
-  if selection="$(python3 scripts/select_gpu_node.py --mem "$memory" --cpus "$cpus" --format sbatch 2>/dev/null)"; then
-    read -r -a selected_args <<< "$selection"
-    sbatch_args+=("${selected_args[@]}")
-    echo "[INFO] Selected ${selection}"
-  else
-    sbatch_args+=(--partition=aoraki_gpu)
-    echo "[WARN] No immediate unrestricted GPU node found; submitting to aoraki_gpu without --nodelist." >&2
-  fi
+  attempt=1
+  while true; do
+    if selection="$(python3 scripts/select_gpu_node.py --mem "$memory" --cpus "$cpus" --format sbatch 2>/dev/null)"; then
+      read -r -a selected_args <<< "$selection"
+      sbatch_args+=("${selected_args[@]}")
+      echo "[INFO] Selected ${selection}"
+      break
+    fi
+
+    echo "[INFO] No unrestricted GPU node currently satisfies MEM=${memory} CPUS=${cpus}; waiting ${gpu_wait_seconds}s before retry ${attempt}." >&2
+    sleep "$gpu_wait_seconds"
+    attempt=$((attempt + 1))
+  done
 fi
 
 sbatch \
