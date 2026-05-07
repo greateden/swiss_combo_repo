@@ -10,11 +10,6 @@ import sys
 PREFERRED_PARTITIONS = [
     "aoraki_gpu_A100_80GB",
     "aoraki_gpu_H100",
-    "aoraki_gpu_A100_40GB",
-    "aoraki_gpu_L40",
-    "aoraki_gpu_L4_24GB",
-    "aoraki_gpu_RTX3090",
-    "aoraki_gpu",
     # These partitions exist in the RTIS resource table, but currently have
     # restricted AllowQos values on this cluster. They are only considered when
     # --allow-restricted-qos is passed.
