@@ -29,15 +29,24 @@ def parse_mem_to_mb(value: str) -> int:
 
 
 def parse_tres_count(tres: str, key: str) -> int:
-    total = 0
+    generic_count: int | None = None
+    typed_total = 0
     for part in tres.split(","):
-        if not (part.startswith(f"{key}=") or part.startswith(f"{key}:")):
+        if part.startswith(f"{key}="):
+            try:
+                generic_count = int(part.rsplit("=", 1)[1])
+            except ValueError:
+                pass
+            continue
+        if not part.startswith(f"{key}:"):
             continue
         try:
-            total += int(part.rsplit("=", 1)[1])
+            typed_total += int(part.rsplit("=", 1)[1])
         except ValueError:
             pass
-    return total
+    if generic_count is not None:
+        return generic_count
+    return typed_total
 
 
 def parse_node(line: str) -> dict[str, str]:
@@ -128,7 +137,7 @@ def main() -> int:
 
     if not candidates:
         print(
-            f"No currently free GPU node satisfies mem={args.mem}, cpus={args.cpus}. "
+            f"No currently free GPU node satisfies cpu_mem={args.mem}, cpus={args.cpus}. "
             "Submit without --nodelist or lower MEM if appropriate.",
             file=sys.stderr,
         )
