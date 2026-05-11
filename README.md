@@ -21,6 +21,8 @@ The app runs the same audio through two speech-to-text models:
 
 Then the app compares those two transcripts sentence by sentence. This matters because the two models do not always split the audio in exactly the same place. The app lines up the matching sentences, keeps the best timestamp for each sentence, and translates the Standard German sentence into English.
 
+Sometimes the Standard German speech-to-text model misses a sentence that the Swiss German model heard. In that case only, the app uses a local Swiss-to-Standard German translation model to fill in the missing Standard German line. If the Standard German transcript already has a sentence, the app keeps it and does not replace it.
+
 The final output is written in two formats:
 
 - `.txt`: easy to read or edit
@@ -37,7 +39,7 @@ cd swiss_combo_repo
 bash build.sh
 ```
 
-This installs the needed Python packages into `python_packages/` and downloads the speech, translation, and word-alignment models into this repo. These downloaded files are ignored by git.
+This installs the needed Python packages into `python_packages/` and downloads the speech, translation, Swiss-to-Standard fallback, and word-alignment models into this repo. These downloaded files are ignored by git.
 
 The build also creates the default Whisper deployments if they are missing:
 
@@ -45,6 +47,15 @@ The build also creates the default Whisper deployments if they are missing:
 - `swiss_german/`: Swiss German audio to Standard German text
 
 The generated deployments force Whisper language `de`, which helps reduce cases where the Swiss German model drifts into English or unrelated scripts.
+
+The default Swiss-to-Standard fallback model is controlled by:
+
+```bash
+SWISS_TO_STANDARD_MODEL_ID=google/madlad400-3b-mt
+SWISS_TO_STANDARD_MODEL_DIR=models/google__madlad400-3b-mt
+```
+
+You can override those variables before `bash build.sh` if you want to test a different local model.
 
 If you already have your own deployments, point to them like this:
 
@@ -151,7 +162,7 @@ Example:
 
 The `start` and `end` values are word timestamps from the original audio. If the app cannot get exact word timestamps from Whisper, it estimates them inside the sentence and adds `"estimated": true`.
 
-The word matching uses a multilingual BERT-style alignment model, plus simple exact-name and number matching so names like Mika keep the same ID across languages.
+The word matching uses a multilingual BERT-style alignment model, plus exact-name and number matching so names like Mika keep the same ID across languages. It does not force every translated word to get a link; uncertain or extra words stay unlinked.
 
 For the Zambo test file used in this repo:
 
@@ -180,6 +191,9 @@ The viewer can:
 - scale the GUI larger or smaller
 - show elapsed time and minutes remaining
 - apply a subtitle offset if you are playing audio somewhere else
+- build an unknown-word list by clicking a Swiss German or Standard German word
+
+The word list uses the JSON `source_id` links. When you click a word, the viewer adds the matched Swiss German, Standard German, and English words to the right-hand column. For German gender, it only uses nearby article evidence in the aligned Standard German sentence, such as `der`, `die`, or `das`. If the gender is not clear from the sentence, it shows `?` instead of guessing from a dictionary. Click `x` to remove a word-list row.
 
 If `pygame` is installed on your laptop, the viewer can also load and play an audio file directly:
 
@@ -198,7 +212,8 @@ The current pipeline uses large Whisper deployments because Swiss German speech 
 - try smaller Whisper models first, such as `small` or `medium`, and accept lower accuracy
 - try Distil-Whisper for faster, smaller Whisper-style transcription
 - keep translation local with OPUS-MT or another small local machine-translation model
-- keep word alignment local with multilingual BERT embeddings plus the current dictionary hints
+- keep Swiss-to-Standard fallback local, but try smaller multilingual translation models if the default model is too large
+- keep word alignment local with multilingual BERT embeddings plus exact-name and number hints
 
 The likely tradeoff is accuracy. A smaller model may run on a normal laptop, but it may produce more English hallucinations or worse Swiss German spelling. For best quality, the ASR model choice matters more than the viewer or JSON format.
 

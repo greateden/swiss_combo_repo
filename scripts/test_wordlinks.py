@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 
-from build_parallel_subtitles import NeuralWordAligner, OutputRow, TimedWord, make_wordlink_sentence
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from build_parallel_subtitles import NeuralWordAligner, OutputRow, TimedWord, fill_missing_standard_texts, make_wordlink_sentence
+from subtitle_viewer import Sentence, SubtitleLine, SubtitleToken, SubtitleViewerApp
 
 
 def source_words(words: list[str], start: float = 95.12) -> list[TimedWord]:
@@ -97,11 +101,50 @@ def test_repeated_words_keep_local_position() -> None:
     assert aligner.align(["Mika", "saw", "Mika"], ["Mika", "Mika"]) == {0: 0, 2: 1}
 
 
+def test_swiss_to_standard_fallback_does_not_override_existing_text() -> None:
+    rows = [
+        OutputRow(dialect_text="Hoi Eden.", standard_text="Hallo Eden.", start=0.0, end=1.0, score=1.0),
+        OutputRow(dialect_text="Was ghört?", standard_text="", start=1.0, end=2.0, score=1.0),
+    ]
+    fill_missing_standard_texts(rows, Path("missing-model"), 450)
+
+    assert rows[0].standard_text == "Hallo Eden."
+    assert rows[1].standard_text == ""
+
+
+def test_viewer_wordbook_entry_uses_source_id_alignment() -> None:
+    sentence = Sentence(
+        index=0,
+        start=0.0,
+        end=1.0,
+        mode="swiss_german",
+        lines=[
+            SubtitleLine(role="source", language="gsw", tokens=[
+                SubtitleToken("de", 0),
+                SubtitleToken("Baum", 1),
+            ]),
+            SubtitleLine(role="standard", language="de", tokens=[
+                SubtitleToken("der", None),
+                SubtitleToken("Baum", 1),
+            ]),
+            SubtitleLine(role="english", language="en", tokens=[
+                SubtitleToken("the", None),
+                SubtitleToken("tree", 1),
+            ]),
+        ],
+    )
+
+    entry = SubtitleViewerApp.build_wordbook_entry(sentence, "source", 1)
+    assert entry == {"swiss": "Baum", "standard": "Baum", "gender": "m", "english": "tree"}
+
+
 def main() -> None:
     test_swiss_german_mika_ids()
     test_standard_german_mode()
     test_reordered_english_question()
     test_repeated_words_keep_local_position()
+    test_swiss_to_standard_fallback_does_not_override_existing_text()
+    test_viewer_wordbook_entry_uses_source_id_alignment()
     print("wordlink tests passed")
 
 

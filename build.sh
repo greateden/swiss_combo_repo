@@ -48,11 +48,13 @@ ln -sf "$ffmpeg_exe" "$PYTHON_PACKAGES_DIR/bin/ffmpeg"
 
 "${python_runner[@]}" scripts/download_translation_model.py
 "${python_runner[@]}" scripts/convert_translation_to_safetensors.py
+"${python_runner[@]}" scripts/download_swiss_to_standard_model.py
 "${python_runner[@]}" scripts/download_alignment_model.py
 
 echo "Build complete."
 echo "Swiss German Whisper deployment: $DIALECT_DIR"
 echo "Standard German Whisper deployment: $STANDARD_DIR"
 echo "Translation model: $TRANSLATION_MODEL_DIR"
+echo "Swiss-to-Standard fallback model: $SWISS_TO_STANDARD_MODEL_DIR"
 echo "Alignment model: $ALIGNMENT_MODEL_DIR"
 echo "Python packages: $PYTHON_PACKAGES_DIR"

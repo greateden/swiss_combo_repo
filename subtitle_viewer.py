@@ -24,9 +24,20 @@ TEXT_TIMED = "#c2c2c2"
 TEXT_MUTED = "#d2d2dc"
 ACTIVE_BG = "#ffd740"
 ACTIVE_TEXT = "#202020"
+WORDLIST_BG = "#181820"
+DELETE_BG = "#4a2630"
 MAX_VISIBLE_LINES = 3
 TICK_MS = 40
 SHORT_GAP_HOLD_SECONDS = 1.5
+
+ARTICLE_GENDERS = {
+    "der": "m",
+    "die": "f/pl",
+    "das": "n",
+    "ein": "m/n",
+    "eine": "f",
+    "einer": "f",
+}
 
 
 @dataclass
@@ -159,8 +170,9 @@ class AudioPlayer:
 
 
 class SubtitleLineView:
-    def __init__(self, parent: tk.Widget) -> None:
+    def __init__(self, parent: tk.Widget, on_token_click=None) -> None:
         self.container = tk.Frame(parent, bg=CARD_BG, highlightthickness=1, highlightbackground=CARD_BORDER)
+        self.on_token_click = on_token_click
         self.label_font = tkfont.Font(family="Segoe UI", size=11, weight="bold")
         self.text_font = tkfont.Font(family="Segoe UI", size=18)
         self.label = tk.Label(
@@ -209,25 +221,32 @@ class SubtitleLineView:
 
     def render(self, line: SubtitleLine, active_time_seconds: float) -> None:
         self.label.config(text=line.display_name())
-        parts: list[tuple[str, str]] = []
+        parts: list[tuple[str, str, int | None]] = []
 
         if line.tokens:
             for index, token in enumerate(line.tokens):
                 if index > 0:
-                    parts.append((" ", "plain"))
+                    parts.append((" ", "plain", None))
                 style = "active" if token.is_active(active_time_seconds) else "timed" if token.has_timing() else "plain"
-                parts.append((token.text or "", style))
+                parts.append((token.text or "", style, index))
         else:
-            parts.append((line.text or "", "plain"))
+            parts.append((line.text or "", "plain", None))
 
-        self._set_readonly_text(parts)
+        self._set_readonly_text(parts, line)
 
-    def _set_readonly_text(self, parts: list[tuple[str, str]]) -> None:
+    def _set_readonly_text(self, parts: list[tuple[str, str, int | None]], line: SubtitleLine | None = None) -> None:
         self.text.configure(state="normal")
         self.text.delete("1.0", "end")
 
-        for content, tag in parts:
-            self.text.insert("end", content, tag)
+        for content, tag, token_index in parts:
+            if token_index is None or line is None or self.on_token_click is None:
+                self.text.insert("end", content, tag)
+                continue
+            click_tag = f"token_{line.role}_{token_index}"
+            self.text.insert("end", content, (tag, click_tag))
+            self.text.tag_bind(click_tag, "<Button-1>", lambda _event, role=line.role, index=token_index: self.on_token_click(role, index))
+            self.text.tag_bind(click_tag, "<Enter>", lambda _event: self.text.configure(cursor="hand2"))
+            self.text.tag_bind(click_tag, "<Leave>", lambda _event: self.text.configure(cursor="arrow"))
 
         self.text.tag_add("center", "1.0", "end")
         self.text.tag_configure("center", justify="center")
@@ -243,6 +262,7 @@ class SubtitleViewerApp:
 
         self.project: WordLinksProject | None = None
         self.current_file: Path | None = None
+        self.current_sentence: Sentence | None = None
         self.total_seconds = 0.0
         self.playback_seconds = 0.0
         self.playing = False
@@ -257,6 +277,7 @@ class SubtitleViewerApp:
         self.line_order_index = 0
         self.audio_player = AudioPlayer()
         self.audio_file: Path | None = None
+        self.wordbook_entries: list[dict[str, str]] = []
 
         self.file_var = tk.StringVar(value="No JSON loaded")
         self.audio_var = tk.StringVar(value="No audio loaded")
@@ -273,6 +294,7 @@ class SubtitleViewerApp:
         self.playback_speed = 1.0
 
         self.line_views: list[SubtitleLineView] = []
+        self.wordbook_rows: list[tk.Frame] = []
         self._build_ui()
 
         if initial_path is not None:
@@ -296,12 +318,35 @@ class SubtitleViewerApp:
         audio_label = tk.Label(self.root, textvariable=self.audio_var, fg=TEXT_MUTED, bg=WINDOW_BG, anchor="w", font=("Segoe UI", 10))
         audio_label.pack(fill="x", padx=16, pady=(4, 0))
 
-        subtitle_frame = tk.Frame(self.root, bg=WINDOW_BG)
-        subtitle_frame.pack(fill="both", expand=True, padx=16, pady=12)
+        body = tk.Frame(self.root, bg=WINDOW_BG)
+        body.pack(fill="both", expand=True, padx=16, pady=12)
+
+        subtitle_frame = tk.Frame(body, bg=WINDOW_BG)
+        subtitle_frame.pack(side="left", fill="both", expand=True)
 
         for _ in range(MAX_VISIBLE_LINES):
-            line_view = SubtitleLineView(subtitle_frame)
+            line_view = SubtitleLineView(subtitle_frame, self.add_clicked_word)
             self.line_views.append(line_view)
+
+        self.wordbook = tk.Frame(body, bg=WORDLIST_BG, highlightthickness=1, highlightbackground=CARD_BORDER, width=420)
+        self.wordbook.pack(side="right", fill="y", padx=(14, 0))
+        self.wordbook.pack_propagate(False)
+
+        tk.Label(
+            self.wordbook,
+            text="Unknown Word Book",
+            fg=TEXT_BASE,
+            bg=WORDLIST_BG,
+            font=("Segoe UI", 12, "bold"),
+        ).pack(fill="x", padx=10, pady=(10, 6))
+
+        header = tk.Frame(self.wordbook, bg=WORDLIST_BG)
+        header.pack(fill="x", padx=8)
+        for label, width in [("Swiss", 10), ("Standard (gender)", 16), ("English", 10), ("", 3)]:
+            tk.Label(header, text=label, fg=TEXT_MUTED, bg=WORDLIST_BG, width=width, anchor="w", font=("Segoe UI", 9, "bold")).pack(side="left")
+
+        self.wordbook_list = tk.Frame(self.wordbook, bg=WORDLIST_BG)
+        self.wordbook_list.pack(fill="both", expand=True, padx=8, pady=(4, 8))
 
         controls = tk.Frame(self.root, bg=WINDOW_BG)
         controls.pack(fill="x", padx=16, pady=(0, 16))
@@ -541,6 +586,7 @@ class SubtitleViewerApp:
         self.remaining_time_var.set(f"Remaining: {self.format_time(max(self.total_seconds - self.playback_seconds, 0.0))}")
 
         if self.project is None:
+            self.current_sentence = None
             self.active_sentence_var.set("No active subtitle")
             self.clear_lines()
             return
@@ -549,10 +595,12 @@ class SubtitleViewerApp:
         sentence = self.find_sentence_at(subtitle_time)
 
         if sentence is None:
+            self.current_sentence = None
             self.active_sentence_var.set("No active subtitle")
             self.clear_lines()
             return
 
+        self.current_sentence = sentence
         self.active_sentence_var.set(f"Sentence {sentence.index} | subtitle time {subtitle_time:.2f} s")
 
         lines = self.ordered_lines(sentence.lines)
@@ -563,6 +611,92 @@ class SubtitleViewerApp:
             else:
                 line_view.hide()
                 line_view.clear()
+
+    def add_clicked_word(self, role: str, token_index: int) -> None:
+        if self.current_sentence is None:
+            return
+        entry = self.build_wordbook_entry(self.current_sentence, role, token_index)
+        if entry is None:
+            return
+        key = (entry["swiss"].lower(), entry["standard"].lower(), entry["english"].lower())
+        if not any((item["swiss"].lower(), item["standard"].lower(), item["english"].lower()) == key for item in self.wordbook_entries):
+            self.wordbook_entries.append(entry)
+            self.render_wordbook()
+
+    @staticmethod
+    def build_wordbook_entry(sentence: Sentence, role: str, token_index: int) -> dict[str, str] | None:
+        line_by_role = {line.role: line for line in sentence.lines}
+        clicked_line = line_by_role.get(role)
+        if clicked_line is None or token_index >= len(clicked_line.tokens):
+            return None
+        clicked_token = clicked_line.tokens[token_index]
+        source_id = clicked_token.source_id
+
+        source_token = SubtitleViewerApp.find_token_by_source_id(line_by_role.get("source"), source_id)
+        standard_token = SubtitleViewerApp.find_token_by_source_id(line_by_role.get("standard"), source_id)
+        english_token = SubtitleViewerApp.find_token_by_source_id(line_by_role.get("english"), source_id)
+
+        if source_token is None and role == "source":
+            source_token = clicked_token
+        if standard_token is None and role == "standard":
+            standard_token = clicked_token
+        if english_token is None and role == "english":
+            english_token = clicked_token
+
+        gender = SubtitleViewerApp.infer_gender(line_by_role.get("standard"), standard_token)
+        return {
+            "swiss": source_token.text if source_token else "",
+            "standard": standard_token.text if standard_token else "",
+            "gender": gender,
+            "english": english_token.text if english_token else "",
+        }
+
+    @staticmethod
+    def find_token_by_source_id(line: SubtitleLine | None, source_id: int | None) -> SubtitleToken | None:
+        if line is None or source_id is None:
+            return None
+        for token in line.tokens:
+            if token.source_id == source_id:
+                return token
+        return None
+
+    @staticmethod
+    def infer_gender(standard_line: SubtitleLine | None, standard_token: SubtitleToken | None) -> str:
+        if standard_line is None or standard_token is None:
+            return "?"
+        stripped_token = standard_token.text.strip(".,;:!?«»\"'()[]{}")
+        if not stripped_token[:1].isupper():
+            return "?"
+        for index, token in enumerate(standard_line.tokens):
+            if token is not standard_token:
+                continue
+            for previous in reversed(standard_line.tokens[max(0, index - 3) : index]):
+                article = previous.text.lower().strip(".,;:!?«»\"'()[]{}")
+                if article in ARTICLE_GENDERS:
+                    return ARTICLE_GENDERS[article]
+            return "?"
+        return "?"
+
+    def render_wordbook(self) -> None:
+        for row in self.wordbook_rows:
+            row.destroy()
+        self.wordbook_rows = []
+
+        for index, entry in enumerate(self.wordbook_entries):
+            row = tk.Frame(self.wordbook_list, bg=WORDLIST_BG)
+            row.pack(fill="x", pady=2)
+            standard = entry["standard"]
+            if entry["gender"] and entry["gender"] != "?":
+                standard = f"{standard} ({entry['gender']})"
+            for value, width in [(entry["swiss"], 10), (standard or "?", 16), (entry["english"], 10)]:
+                tk.Label(row, text=value or "-", fg=TEXT_BASE, bg=WORDLIST_BG, width=width, anchor="w", font=("Segoe UI", 9)).pack(side="left")
+            tk.Button(row, text="x", bg=DELETE_BG, fg=TEXT_BASE, command=lambda i=index: self.delete_wordbook_entry(i), padx=4, pady=0).pack(side="left")
+            self.wordbook_rows.append(row)
+
+    def delete_wordbook_entry(self, index: int) -> None:
+        if 0 <= index < len(self.wordbook_entries):
+            del self.wordbook_entries[index]
+            self.render_wordbook()
 
     def clear_lines(self) -> None:
         for line_view in self.line_views:

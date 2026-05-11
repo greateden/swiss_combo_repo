@@ -346,8 +346,10 @@ def parse_args() -> argparse.Namespace:
         help="Write source-anchored wordlink JSON instead of text/SRT output.",
     )
     parser.add_argument("--translation-model-dir", default=os.environ.get("TRANSLATION_MODEL_DIR"))
+    parser.add_argument("--swiss-to-standard-model-dir", default=os.environ.get("SWISS_TO_STANDARD_MODEL_DIR"))
     parser.add_argument("--alignment-model-dir", default=os.environ.get("ALIGNMENT_MODEL_DIR"))
     parser.add_argument("--max-translate-chars", type=int, default=450)
+    parser.add_argument("--max-normalize-chars", type=int, default=450)
     parser.add_argument("--lookahead", type=int, default=10)
     parser.add_argument("--max-span", type=int, default=3)
     parser.add_argument("--min-score", type=float, default=0.24)
@@ -779,6 +781,14 @@ def load_translator(model_dir: Path):
     model = AutoModelForSeq2SeqLM.from_pretrained(str(model_dir), **model_kwargs)
     model.to(device)
     return tokenizer, model, device
+
+
+def model_dir_has_weights(model_dir: Path) -> bool:
+    return (
+        (model_dir / "model.safetensors").exists()
+        or (model_dir / "pytorch_model.bin").exists()
+        or any(model_dir.glob("*.safetensors"))
+    )
 
 
 def cache_key(text: str) -> str:
@@ -1292,6 +1302,69 @@ def translate_texts(
     return translations
 
 
+def normalize_one_swiss_text(text: str, tokenizer, model, device: str, max_chars: int) -> str:
+    import torch
+
+    text = clean_text(text)
+    if not text:
+        return ""
+    chunks = [text[i : i + max_chars] for i in range(0, len(text), max_chars)]
+    normalized_chunks: list[str] = []
+    for chunk in chunks:
+        prompt = f"<2de> {chunk}"
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(device)
+        with torch.no_grad():
+            generated = model.generate(**inputs, max_new_tokens=256)
+        normalized_chunks.append(tokenizer.decode(generated[0], skip_special_tokens=True))
+    return clean_text(" ".join(normalized_chunks))
+
+
+def fill_missing_standard_texts(
+    rows: list[OutputRow],
+    model_dir: Path | None,
+    max_chars: int,
+    normalization_cache: Path | None = None,
+) -> None:
+    missing_indexes = [index for index, row in enumerate(rows) if row.dialect_text and not clean_text(row.standard_text)]
+    if not missing_indexes:
+        return
+    if model_dir is None or not model_dir.exists() or not model_dir_has_weights(model_dir):
+        print(
+            f"[WARN] {len(missing_indexes)} rows have Swiss German but no Standard German; "
+            "Swiss-to-Standard fallback model is not available.",
+            flush=True,
+        )
+        return
+
+    cache: dict[str, str] = {}
+    source_by_key: dict[str, str] = {}
+    if normalization_cache:
+        cache, source_by_key = load_translation_cache(normalization_cache)
+        print(f"[INFO] Loaded {len(cache)} cached Swiss-to-Standard normalizations from {normalization_cache}", flush=True)
+
+    normalizer: tuple[object, object, str] | None = None
+    total = len(missing_indexes)
+    for count, row_index in enumerate(missing_indexes, start=1):
+        row = rows[row_index]
+        source = clean_text(row.dialect_text)
+        key = cache_key(f"gsw2de:{source}")
+        source_by_key.setdefault(key, source)
+        if key in cache:
+            row.standard_text = cache[key]
+            print(f"[INFO] Swiss-to-Standard {count}/{total}: cache hit", flush=True)
+            continue
+
+        if normalizer is None:
+            normalizer = load_translator(model_dir)
+        tokenizer, model, device = normalizer
+        row.standard_text = normalize_one_swiss_text(source, tokenizer, model, device, max_chars)
+        if row.standard_text:
+            cache[key] = row.standard_text
+            if normalization_cache:
+                write_translation_cache(normalization_cache, cache, source_by_key)
+        print(f"[INFO] Swiss-to-Standard {count}/{total}: translated", flush=True)
+
+
 def rows_from_standard_blocks(standard_blocks: list[Block]) -> list[OutputRow]:
     return [
         OutputRow(
@@ -1336,6 +1409,14 @@ def main() -> None:
             rows.sort(key=lambda row: (row.start, row.end, row.dialect_text))
     if args.limit > 0:
         rows = rows[: args.limit]
+
+    if not args.standard_german:
+        normalization_cache = None
+        if args.translation_cache:
+            translation_cache_path = Path(args.translation_cache).resolve()
+            normalization_cache = translation_cache_path.with_name("swiss_to_standard.jsonl")
+        fallback_model_dir = Path(args.swiss_to_standard_model_dir).resolve() if args.swiss_to_standard_model_dir else None
+        fill_missing_standard_texts(rows, fallback_model_dir, args.max_normalize_chars, normalization_cache)
 
     if args.skip_translation:
         english_lines = [""] * len(rows)

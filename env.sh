@@ -17,6 +17,8 @@ export STANDARD_DIR="${STANDARD_DIR:-$(resolve_dir "$SWISS_COMBO_DIR/swiss_germa
 
 export TRANSLATION_MODEL_ID="${TRANSLATION_MODEL_ID:-Helsinki-NLP/opus-mt-de-en}"
 export TRANSLATION_MODEL_DIR="${TRANSLATION_MODEL_DIR:-$SWISS_COMBO_DIR/models/Helsinki-NLP__opus-mt-de-en}"
+export SWISS_TO_STANDARD_MODEL_ID="${SWISS_TO_STANDARD_MODEL_ID:-google/madlad400-3b-mt}"
+export SWISS_TO_STANDARD_MODEL_DIR="${SWISS_TO_STANDARD_MODEL_DIR:-$SWISS_COMBO_DIR/models/google__madlad400-3b-mt}"
 export ALIGNMENT_MODEL_ID="${ALIGNMENT_MODEL_ID:-bert-base-multilingual-cased}"
 export ALIGNMENT_MODEL_DIR="${ALIGNMENT_MODEL_DIR:-$SWISS_COMBO_DIR/models/bert-base-multilingual-cased}"
 export PYTHON_PACKAGES_DIR="${PYTHON_PACKAGES_DIR:-$SWISS_COMBO_DIR/python_packages}"
@@ -80,4 +82,4 @@ check_standard_deployment() {
 mkdir -p \
   "$SWISS_COMBO_DIR"/{audio,logs,models,outputs,python_packages,scripts,tmp,work} \
   "$HF_HOME" "$HF_HUB_CACHE" "$TRANSFORMERS_CACHE" "$HF_DATASETS_CACHE" \
-  "$XDG_CACHE_HOME" "$PIP_CACHE_DIR" "$MPLCONFIGDIR" "$TRANSLATION_MODEL_DIR" "$ALIGNMENT_MODEL_DIR"
+  "$XDG_CACHE_HOME" "$PIP_CACHE_DIR" "$MPLCONFIGDIR" "$TRANSLATION_MODEL_DIR" "$SWISS_TO_STANDARD_MODEL_DIR" "$ALIGNMENT_MODEL_DIR"
